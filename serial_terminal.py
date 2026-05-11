@@ -182,6 +182,7 @@ class SerialTerminal(QMainWindow):
         self.history_index = -1
         self.current_input_buffer = ""
         self.line_ending = "\r\n"  # Default to CR+LF
+        self._loading_command_list = False
 
         self._status_timer = QTimer()
         self._status_timer.setSingleShot(True)
@@ -1590,16 +1591,6 @@ class SerialTerminal(QMainWindow):
                 if 'hexmode' not in item:
                     item['hexmode'] = False
 
-            # Truncate if more than LINEEDIT_MAX_NUMBER
-            if len(data) > LINEEDIT_MAX_NUMBER:
-                data = data[:LINEEDIT_MAX_NUMBER]
-                QMessageBox.warning(
-                    self,
-                    "List Truncated",
-                    f"The command list has more than {LINEEDIT_MAX_NUMBER} items.\n"
-                    f"The list has been limited to the first {LINEEDIT_MAX_NUMBER} items."
-                )
-
             self.current_cmdlist_file = file_path
             self.apply_config_data_to_ui(data)
             self.update_config_file_status()
@@ -1693,17 +1684,13 @@ class SerialTerminal(QMainWindow):
 
     def apply_config_data_to_ui(self, data):
         """Apply loaded YAML data to the UI elements and setup pagination."""
-        self.full_command_list = sorted(data, key=lambda x: x['index'])
-        self.current_page = 0
-        
-        self.update_command_view()
-        
-        target_file = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
+        self._loading_command_list = True
         try:
-            with open(target_file, "w", encoding="utf-8") as f:
-                yaml.safe_dump(self.full_command_list, f, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            self.update_status_bar(f"Warning: Could not save to {os.path.basename(target_file)}: {str(e)}")
+            self.full_command_list = sorted(data, key=lambda x: x['index'])
+            self.current_page = 0
+            self.update_command_view()
+        finally:
+            self._loading_command_list = False
 
     def go_to_page(self, page_number):
         self.load_checkbox_lineedit(self.current_cmdlist_file)
@@ -2364,6 +2351,9 @@ class SerialTerminal(QMainWindow):
             self.update_status_bar("Error: No command to send")
 
     def save_checkbox_lineedit(self, filename=None):
+        if self._loading_command_list:
+            return
+
         # Update the in-memory list first
         for i in range(LINEEDIT_MAX_NUMBER):
             if not self.lineedits[i].isVisible():
