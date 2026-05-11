@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ATCMDer
+Comment=Serial communication utility with predefined commands
+Exec=/opt/atcmder/atcmder
+Icon=atcmder
+Terminal=false
+Categories=Development;Utility;
