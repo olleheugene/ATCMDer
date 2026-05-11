@@ -58,7 +58,14 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
           $version = "${env:GITHUB_REF_NAME}".Substring(1)
-          makensis /DAPP_VERSION=$version /DAPP_EXE=dist\atcmder.exe /DOUTPUT_FILE=release\atcmder-windows-$version-setup.exe packaging\windows\installer.nsi
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) {
+            $makensis = "${env:ProgramFiles}\NSIS\makensis.exe"
+          }
+          if (-not (Test-Path $makensis)) {
+            throw "makensis.exe not found after NSIS installation"
+          }
+          & $makensis /DAPP_VERSION=$version /DAPP_EXE=dist\atcmder.exe /DOUTPUT_FILE=release\atcmder-windows-$version-setup.exe packaging\windows\installer.nsi
       - name: Upload release asset
         uses: softprops/action-gh-release@v3
         with:
