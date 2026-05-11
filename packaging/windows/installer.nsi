@@ -8,6 +8,10 @@
   !define APP_EXE "dist\atcmder.exe"
 !endif
 
+!ifndef APP_DIR
+  !define APP_DIR "dist"
+!endif
+
 !ifndef OUTPUT_FILE
   !define OUTPUT_FILE "release\atcmder-windows-setup.exe"
 !endif
@@ -29,7 +33,7 @@ RequestExecutionLevel Admin
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File "${APP_EXE}"
+  File /r "${APP_DIR}\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\ATCMDer"
