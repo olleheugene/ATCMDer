@@ -48,6 +48,46 @@ QSplitter::handle:horizontal {
 QSplitter::handle:vertical {
     height: 1px;
 }
+
+QSpinBox,
+QDoubleSpinBox {
+    padding-right: 22px;
+}
+
+QSpinBox::up-button,
+QDoubleSpinBox::up-button,
+QSpinBox::down-button,
+QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 18px;
+    border: none;
+    background-color: transparent;
+    border-left: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+QSpinBox::up-button,
+QDoubleSpinBox::up-button {
+    subcontrol-position: top right;
+}
+
+QSpinBox::down-button,
+QDoubleSpinBox::down-button {
+    subcontrol-position: bottom right;
+}
+
+QSpinBox::up-arrow,
+QDoubleSpinBox::up-arrow {
+    image: url(resources/spin_up_light.svg);
+    width: 10px;
+    height: 10px;
+}
+
+QSpinBox::down-arrow,
+QDoubleSpinBox::down-arrow {
+    image: url(resources/spin_down_light.svg);
+    width: 10px;
+    height: 10px;
+}
 """
 
 WEB_DIVIDER_QSS = """
@@ -123,6 +163,10 @@ class SerialTerminal(QMainWindow):
             number_part = text[:-3].strip()
             return number_part, " bps"
         return text, ""
+
+    @staticmethod
+    def digits_only(text):
+        return "".join(ch for ch in str(text) if ch.isdigit())
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
@@ -253,9 +297,10 @@ class SerialTerminal(QMainWindow):
         self.baudrate_combo.setEditable(True)
         self.baudrate_combo.lineEdit().setPlaceholderText("BAUDRATE")
         self.tune_combo_line_edit(self.baudrate_combo)
-        baudrate_regex = QRegularExpression(r"^\s*\d{1,8}(\s*bps)?\s*$")
+        baudrate_regex = QRegularExpression(r"^\s*\d{0,8}(\s*bps)?\s*$")
         self.baudrate_combo.lineEdit().setValidator(QRegularExpressionValidator(baudrate_regex, self))
         self.baudrate_combo.lineEdit().installEventFilter(self)
+        self.baudrate_combo.lineEdit().textEdited.connect(self.enforce_baudrate_suffix)
         self.baudrate_combo.currentTextChanged.connect(self.on_baudrate_changed)
         self.baudrate_combo.lineEdit().editingFinished.connect(self.normalize_baudrate_display)
         self.baudrate_combo.setContentsMargins(0, 0, 0, 0)
@@ -565,17 +610,61 @@ class SerialTerminal(QMainWindow):
                 return False
 
             if event.type() == QEvent.KeyPress:
+                selection_start = obj.selectionStart()
+                selection_length = len(obj.selectedText()) if selection_start >= 0 else 0
+                selection_end = selection_start + selection_length if selection_start >= 0 else -1
+                number_part, _ = self.split_baudrate_text(obj.text())
+
+                if event.text().isdigit():
+                    cursor_position = min(obj.cursorPosition(), len(number_part))
+                    if selection_start >= 0 and selection_start < len(number_part):
+                        replace_end = min(selection_end, len(number_part))
+                        new_number = (
+                            number_part[:selection_start]
+                            + event.text()
+                            + number_part[replace_end:]
+                        )
+                        self.set_baudrate_text(new_number, selection_start + 1)
+                        return True
+                    if cursor_position < len(number_part):
+                        new_number = (
+                            number_part[:cursor_position]
+                            + event.text()
+                            + number_part[cursor_position + 1:]
+                        )
+                    else:
+                        new_number = number_part + event.text()
+                    self.set_baudrate_text(new_number, cursor_position + 1)
+                    return True
+
+                if selection_start >= 0 and event.key() in (Qt.Key_Backspace, Qt.Key_Delete):
+                    if selection_start < len(number_part):
+                        new_number = number_part[:selection_start] + number_part[min(selection_end, len(number_part)):]
+                    else:
+                        new_number = number_part
+                    self.set_baudrate_text(new_number, selection_start)
+                    return True
+
+                if event.key() == Qt.Key_Backspace:
+                    cursor_position = min(obj.cursorPosition(), len(number_part))
+                    if cursor_position > 0:
+                        new_number = number_part[:cursor_position - 1] + number_part[cursor_position:]
+                        self.set_baudrate_text(new_number, cursor_position - 1)
+                        return True
+                    return True
+
+                if event.key() == Qt.Key_Delete:
+                    cursor_position = min(obj.cursorPosition(), len(number_part))
+                    if cursor_position < len(number_part):
+                        new_number = number_part[:cursor_position] + number_part[cursor_position + 1:]
+                        self.set_baudrate_text(new_number, cursor_position)
+                        return True
+                    return True
+
                 if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Home, Qt.Key_End):
                     result = super().eventFilter(obj, event)
                     QTimer.singleShot(0, self.clamp_baudrate_cursor)
                     return result
-
-                if event.key() == Qt.Key_Backspace and obj.cursorPosition() > self.baudrate_number_length():
-                    obj.setCursorPosition(self.baudrate_number_length())
-                    return True
-
-                if event.key() == Qt.Key_Delete and obj.cursorPosition() >= self.baudrate_number_length():
-                    return True
 
                 if event.text().isdigit() and obj.cursorPosition() > self.baudrate_number_length():
                     obj.setCursorPosition(self.baudrate_number_length())
@@ -750,6 +839,28 @@ class SerialTerminal(QMainWindow):
     def baudrate_number_length(self):
         number_part, _ = self.split_baudrate_text(self.baudrate_combo.lineEdit().text())
         return len(number_part)
+
+    def set_baudrate_text(self, number_text, cursor_position=None):
+        line_edit = self.baudrate_combo.lineEdit()
+        if not line_edit:
+            return
+        digits = self.digits_only(number_text)[:8]
+        display_text = f"{digits} bps" if digits else " bps"
+        previous_block = line_edit.blockSignals(True)
+        line_edit.setText(display_text)
+        line_edit.blockSignals(previous_block)
+        if cursor_position is None:
+            cursor_position = len(digits)
+        line_edit.setCursorPosition(min(cursor_position, len(digits)))
+        self.baudrate_combo.setEditText(display_text)
+
+    def enforce_baudrate_suffix(self, text):
+        digits = self.digits_only(text)[:8]
+        cursor_position = min(self.baudrate_combo.lineEdit().cursorPosition(), len(digits))
+        current_display = self.baudrate_combo.lineEdit().text()
+        desired_display = f"{digits} bps" if digits else " bps"
+        if current_display != desired_display:
+            self.set_baudrate_text(digits, cursor_position)
 
     def select_baudrate_number(self):
         line_edit = self.baudrate_combo.lineEdit()
@@ -1719,7 +1830,7 @@ class SerialTerminal(QMainWindow):
         style += "\n" + COMMON_THEME_QSS
         style += "\n" + WEB_DIVIDER_QSS
 
-        for resource_name in ("down_arrow.png", "checkbox.png", "collapse-divider.svg", "checkmark.svg"):
+        for resource_name in ("down_arrow.png", "spin_up_light.svg", "spin_down_light.svg", "checkbox.png", "collapse-divider.svg", "checkmark.svg"):
             resource_path = utils.get_resources(resource_name).replace("\\", "/")
             style = style.replace(f"url(resources/{resource_name})", f"url({resource_path})")
 
@@ -1809,6 +1920,16 @@ class SerialTerminal(QMainWindow):
                 QMessageBox.critical(self, "Connection Error", f"Failed to open {self.selected_port}:\n{error_msg}")
                 self.connect_btn.setChecked(False)
 
+    def is_port_usable(self, port):
+        if not port:
+            return False
+        try:
+            test_serial = serial.Serial(port=port, baudrate=self.baudrate, timeout=0.1)
+            test_serial.close()
+            return True
+        except Exception:
+            return False
+
     def refresh_serial_ports(self, auto_connect=False):
         current_port = self.serial_port_combo.currentText()
         if self.serial and self.serial.is_open:
@@ -1820,26 +1941,24 @@ class SerialTerminal(QMainWindow):
         self.serial_port_combo.addItems(ports)
 
         if auto_connect:
-            # Auto-connect to available ports in order of recent port list index
+            # Prefer the most recently used usable port. Otherwise fall back to the first item.
             for entry in self.recent_ports:
                 port_settings = entry.get("settings", {})
                 port_candidate = port_settings.get("port", "").strip()
-                if port_candidate and port_candidate in ports:
+                if port_candidate and port_candidate in ports and self.is_port_usable(port_candidate):
                     self.serial_port_combo.setCurrentText(port_candidate)
                     self.selected_port = port_candidate
                     self.baudrate = port_settings.get("baudrate", self.baudrate)
                     self.baudrate_combo.setCurrentText(self.format_baudrate(self.baudrate))
                     self.parity = port_settings.get("parity", "None")
                     self.flow_control = port_settings.get("flow_control", "None")
-                    self.toggle_serial_connection()
                     break
             else:
-                # If none available, use first port
                 if ports:
                     self.serial_port_combo.setCurrentIndex(0)
                     self.selected_port = ports[0]
         else:
-            if current_port in ports:
+            if current_port in ports and self.is_port_usable(current_port):
                 self.serial_port_combo.setCurrentText(current_port)
                 self.selected_port = current_port
             elif ports:
