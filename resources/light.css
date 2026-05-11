@@ -65,8 +65,8 @@ QComboBox {
     border-radius: 5;
     padding: 4px;
     margin-right: 5px;
-    min-height: 14px;
-    max-height: 14px;
+    min-height: 16px;
+    max-height: 16px;
     min-width: 80px;
 }
 
