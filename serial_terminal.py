@@ -361,6 +361,13 @@ class SerialTerminal(QMainWindow):
         cmd_actions_group.setLayout(cmd_actions_layout)
         self.left_widget_layout.addWidget(cmd_actions_group)
         # --- End of button group for predefined commands ---
+
+        self.command_rows_widget = QWidget()
+        self.command_rows_layout = QVBoxLayout()
+        self.command_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.command_rows_layout.setSpacing(8)
+        self.command_rows_widget.setLayout(self.command_rows_layout)
+        self.left_widget_layout.addWidget(self.command_rows_widget)
         
         self.checkboxes = []
         self.lineedits = []
@@ -429,7 +436,7 @@ class SerialTerminal(QMainWindow):
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(6)
             row_widget.setLayout(row_layout)
-            self.left_widget_layout.addWidget(row_widget)
+            self.command_rows_layout.addWidget(row_widget)
     
             self.checkboxes.append(checkbox)
             self.lineedits.append(lineedit)
@@ -1835,6 +1842,8 @@ class SerialTerminal(QMainWindow):
             style = style.replace(f"url(resources/{resource_name})", f"url({resource_path})")
 
         QApplication.instance().setStyleSheet(style)
+        if hasattr(self, "command_rows_layout"):
+            self.command_rows_layout.setSpacing(4 if theme_name in {"web", "web_dark"} else 8)
         self.update_collapse_divider_visibility(theme_name)
         self.update_theme_icons(theme_name)
 
