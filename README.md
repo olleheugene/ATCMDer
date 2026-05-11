@@ -1,4 +1,4 @@
-# atcmder
+# ATCMDer
 
 This program is designed to make it easier to control devices via serial communication by allowing users to send predefined commands with a single click. While it also supports the traditional method of entering commands manually through a terminal window, it provides additional functionality such as sending individual preset commands using dedicated send buttons, or executing multiple commands at once based on a scheduled time.
 
