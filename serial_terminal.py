@@ -116,6 +116,14 @@ class SerialTerminal(QMainWindow):
             combo.lineEdit().setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             combo.lineEdit().setTextMargins(2, 0, 0, 0)
 
+    @staticmethod
+    def split_baudrate_text(text):
+        text = str(text).strip()
+        if text.endswith("bps"):
+            number_part = text[:-3].strip()
+            return number_part, " bps"
+        return text, ""
+
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
 
@@ -247,6 +255,7 @@ class SerialTerminal(QMainWindow):
         self.tune_combo_line_edit(self.baudrate_combo)
         baudrate_regex = QRegularExpression(r"^\s*\d{1,8}(\s*bps)?\s*$")
         self.baudrate_combo.lineEdit().setValidator(QRegularExpressionValidator(baudrate_regex, self))
+        self.baudrate_combo.lineEdit().installEventFilter(self)
         self.baudrate_combo.currentTextChanged.connect(self.on_baudrate_changed)
         self.baudrate_combo.lineEdit().editingFinished.connect(self.normalize_baudrate_display)
         self.baudrate_combo.setContentsMargins(0, 0, 0, 0)
@@ -489,6 +498,7 @@ class SerialTerminal(QMainWindow):
         self.setCentralWidget(central)
         self.splitter = splitter
         self.left_panel_visible = True
+        self.expanded_splitter_sizes = [260, 40, 850]
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
         
@@ -527,19 +537,49 @@ class SerialTerminal(QMainWindow):
         self.update_command_group_button_styles()
         QTimer.singleShot(0, self.fit_window_height_to_content)
 
-    def fit_window_height_to_content(self):
+    def fit_window_height_to_content(self, only_grow=False):
         self.left_widget.adjustSize()
         content_height = self.left_widget.sizeHint().height()
         menu_height = self.menuBar().sizeHint().height()
         status_height = self.statusBar().sizeHint().height()
         target_height = content_height + menu_height + status_height + 2
         self.setMinimumHeight(target_height)
-        self.resize(self.width(), target_height)
+        if not only_grow or self.height() < target_height:
+            self.resize(self.width(), target_height)
 
     def eventFilter(self, obj, event):
         key = None
         text = ""
-        
+
+        baudrate_line_edit = None
+        if hasattr(self, "baudrate_combo") and self.baudrate_combo:
+            baudrate_line_edit = self.baudrate_combo.lineEdit()
+
+        if baudrate_line_edit is not None and obj is baudrate_line_edit:
+            if event.type() == QEvent.FocusIn:
+                QTimer.singleShot(0, self.select_baudrate_number)
+                return False
+
+            if event.type() == QEvent.MouseButtonRelease:
+                QTimer.singleShot(0, self.clamp_baudrate_cursor)
+                return False
+
+            if event.type() == QEvent.KeyPress:
+                if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Home, Qt.Key_End):
+                    result = super().eventFilter(obj, event)
+                    QTimer.singleShot(0, self.clamp_baudrate_cursor)
+                    return result
+
+                if event.key() == Qt.Key_Backspace and obj.cursorPosition() > self.baudrate_number_length():
+                    obj.setCursorPosition(self.baudrate_number_length())
+                    return True
+
+                if event.key() == Qt.Key_Delete and obj.cursorPosition() >= self.baudrate_number_length():
+                    return True
+
+                if event.text().isdigit() and obj.cursorPosition() > self.baudrate_number_length():
+                    obj.setCursorPosition(self.baudrate_number_length())
+
 
         if isinstance(obj, QLineEdit) and event.type() == QEvent.KeyPress:
             lineedit_index = -1
@@ -574,7 +614,7 @@ class SerialTerminal(QMainWindow):
             # Check the scroll position shortly after a mouse wheel event occurs
             QTimer.singleShot(50, lambda: self.check_scroll_position())
         
-        if obj is self.terminal_widget:
+        if hasattr(self, "terminal_widget") and obj is self.terminal_widget:
             if event.type() == QEvent.Type.Resize:
                 # Check scroll position after resizing
                 QTimer.singleShot(50, lambda: self.check_scroll_position())
@@ -706,6 +746,26 @@ class SerialTerminal(QMainWindow):
             return True
             
         return super().eventFilter(obj, event)
+
+    def baudrate_number_length(self):
+        number_part, _ = self.split_baudrate_text(self.baudrate_combo.lineEdit().text())
+        return len(number_part)
+
+    def select_baudrate_number(self):
+        line_edit = self.baudrate_combo.lineEdit()
+        if not line_edit:
+            return
+        number_length = self.baudrate_number_length()
+        line_edit.setSelection(0, number_length)
+
+    def clamp_baudrate_cursor(self):
+        line_edit = self.baudrate_combo.lineEdit()
+        if not line_edit:
+            return
+        number_length = self.baudrate_number_length()
+        cursor_position = line_edit.cursorPosition()
+        if cursor_position > number_length:
+            line_edit.setCursorPosition(number_length)
 
     def edit_current_command_list(self):
         """Open the currently selected predefined command list in an internal YAML editor."""
@@ -1834,8 +1894,14 @@ class SerialTerminal(QMainWindow):
 
         self.serial_group.setLayout(layout)
 
-    def toggle_left_panel(self):
-        if self.left_panel_visible:
+    def toggle_left_panel(self, checked=False, persist=True, target_visible=None, capture_expanded_sizes=True):
+        new_visible = (not self.left_panel_visible) if target_visible is None else target_visible
+        if new_visible == self.left_panel_visible:
+            return
+
+        if not new_visible:
+            if capture_expanded_sizes:
+                self.expanded_splitter_sizes = self.splitter.sizes()
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.RIGHT_ARROW_ICON_NAME)))
             self.serial_group.setParent(None)
             self._setup_serial_group_layout(horizontal=True)
@@ -1852,9 +1918,16 @@ class SerialTerminal(QMainWindow):
             self.left_widget_layout.insertWidget(0, self.serial_group)
 
             self.splitter.widget(0).show()
+            if isinstance(self.expanded_splitter_sizes, list) and len(self.expanded_splitter_sizes) == 3:
+                self.splitter.setSizes(self.expanded_splitter_sizes)
 
-        self.left_panel_visible = not self.left_panel_visible
+        self.left_panel_visible = new_visible
+        self.toggle_btn.setChecked(not self.left_panel_visible)
         self.terminal_widget.update_scrollbar()
+        if self.left_panel_visible:
+            QTimer.singleShot(0, lambda: self.fit_window_height_to_content(only_grow=True))
+        if persist:
+            self.save_ui_state()
 
     def handle_hex_input(self, index, text):
         if not self.hex_modes[index]:
@@ -2637,7 +2710,7 @@ class SerialTerminal(QMainWindow):
         else:
             self.ext_cmd_btn.setToolTip("Run External Shell Command\n(No command configured)")
 
-    def save_splitter_sizes(self, *_args):
+    def save_ui_state(self):
         try:
             settings = {}
 
@@ -2654,11 +2727,18 @@ class SerialTerminal(QMainWindow):
 
             settings.setdefault("ui", {})
             settings["ui"]["splitter_sizes"] = self.splitter.sizes()
+            settings["ui"]["left_panel_visible"] = self.left_panel_visible
+            settings["ui"]["expanded_splitter_sizes"] = self.expanded_splitter_sizes
 
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
                 yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
-            print(f"Warning: Could not save splitter sizes: {e}")
+            print(f"Warning: Could not save UI state: {e}")
+
+    def save_splitter_sizes(self, *_args):
+        if self.left_panel_visible:
+            self.expanded_splitter_sizes = self.splitter.sizes()
+        self.save_ui_state()
 
     def load_settings(self):
         """Load settings from YAML file"""
@@ -2683,7 +2763,11 @@ class SerialTerminal(QMainWindow):
                 'history': {'max_entries': 100},
                 'keep_hex_mode': False,
                 'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'},
-                'ui': {'splitter_sizes': [260, 40, 850]}
+                'ui': {
+                    'splitter_sizes': [260, 40, 850],
+                    'left_panel_visible': True,
+                    'expanded_splitter_sizes': [260, 40, 850]
+                }
             }
             
             # Merge with defaults
@@ -2707,7 +2791,11 @@ class SerialTerminal(QMainWindow):
                 'history': {'max_entries': 100},
                 'keep_hex_mode': False,
                 'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'},
-                'ui': {'splitter_sizes': [260, 40, 850]}
+                'ui': {
+                    'splitter_sizes': [260, 40, 850],
+                    'left_panel_visible': True,
+                    'expanded_splitter_sizes': [260, 40, 850]
+                }
             }
 
     def apply_initial_settings(self):
@@ -2753,8 +2841,15 @@ class SerialTerminal(QMainWindow):
 
         ui_settings = self.settings.get('ui', {})
         splitter_sizes = ui_settings.get('splitter_sizes', [260, 40, 850])
+        expanded_splitter_sizes = ui_settings.get('expanded_splitter_sizes', splitter_sizes)
         if isinstance(splitter_sizes, list) and len(splitter_sizes) == 3:
             self.splitter.setSizes(splitter_sizes)
+        if isinstance(expanded_splitter_sizes, list) and len(expanded_splitter_sizes) == 3:
+            self.expanded_splitter_sizes = expanded_splitter_sizes
+        left_panel_visible = ui_settings.get('left_panel_visible', True)
+        self.toggle_btn.setChecked(not left_panel_visible)
+        if not left_panel_visible:
+            self.toggle_left_panel(persist=False, target_visible=False, capture_expanded_sizes=False)
         
         # Update UI elements
         self.terminal_widget.update_scrollbar()
