@@ -2,7 +2,7 @@ font:
   name: Monaco
   size: 11
   bold: false
-theme: dark
+theme: web_dark
 output_window:
   show_line_numbers: true
   show_time: false

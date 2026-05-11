@@ -1,9 +1,12 @@
 from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu
-from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices
-from PySide6.QtCore import Qt, QTimer, QUrl, QRect, Signal
+from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices, QPainterPath
+from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal
 import re
 import unicodedata
 MAX_TERMINAL_LINES = 100000
+TERMINAL_BG = QColor(8, 13, 21)
+TERMINAL_LINE_NUMBER_BG = QColor(13, 20, 32)
+TERMINAL_LINE_NUMBER_SEPARATOR = QColor(42, 52, 68)
 
 class TerminalWidget(QAbstractScrollArea):
     request_paste = Signal()
@@ -63,9 +66,11 @@ class TerminalWidget(QAbstractScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAutoFillBackground(True)
+        self.setAutoFillBackground(False)
+        self.viewport().setAutoFillBackground(False)
+        self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Base, QColor(30, 30, 30))
+        palette.setColor(QPalette.ColorRole.Base, TERMINAL_BG)
         self.setPalette(palette)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -311,13 +316,18 @@ class TerminalWidget(QAbstractScrollArea):
         painter.setFont(self.font)
         # Set text rendering hints for better alignment
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        painter.fillRect(self.viewport().rect(), QColor(30, 30, 30))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        viewport_rect = self.viewport().rect()
+        rounded_rect = QRectF(viewport_rect).adjusted(0.5, 0.5, -0.5, -0.5)
+        rounded_path = QPainterPath()
+        rounded_path.addRoundedRect(rounded_rect, 12, 12)
+        painter.setClipPath(rounded_path)
+        painter.fillPath(rounded_path, TERMINAL_BG)
         
         if not self.lines:
             painter.end()
             return
         
-        viewport_rect = self.viewport().rect()
         effective_width = viewport_rect.width()
         if self.verticalScrollBar().isVisible():
             effective_width -= self.verticalScrollBar().width()
@@ -351,10 +361,10 @@ class TerminalWidget(QAbstractScrollArea):
         # Draw line number background if enabled
         if self.show_line_numbers and self.line_number_width > 0:
             line_number_rect = viewport_rect.adjusted(0, 0, -(effective_width - self.line_number_width)-12, 0)
-            painter.fillRect(line_number_rect, QColor(40, 40, 40))  # Slightly lighter background
+            painter.fillRect(line_number_rect, TERMINAL_LINE_NUMBER_BG)
             
             # Draw separator line
-            painter.setPen(QColor(60, 60, 60))
+            painter.setPen(TERMINAL_LINE_NUMBER_SEPARATOR)
             painter.drawLine(self.line_number_width - self.line_number_padding // 2, 0, 
                            self.line_number_width - self.line_number_padding // 2, effective_height)
         

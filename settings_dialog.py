@@ -17,9 +17,14 @@ class SerialTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
         serial_group = QGroupBox("Default Serial Port Settings")
         form_layout = QFormLayout()
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(10)
 
         # Port
         self.port_combo = QComboBox()
@@ -27,6 +32,8 @@ class SerialTab(QWidget):
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh_ports)
         port_layout = QHBoxLayout()
+        port_layout.setContentsMargins(0, 0, 0, 0)
+        port_layout.setSpacing(8)
         port_layout.addWidget(self.port_combo)
         port_layout.addWidget(refresh_btn)
         form_layout.addRow("Port:", port_layout)
@@ -103,13 +110,19 @@ class OutputTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
         # Font settings
         font_group = QGroupBox("Font Settings")
         font_layout = QVBoxLayout()
+        font_layout.setContentsMargins(0, 0, 0, 0)
+        font_layout.setSpacing(8)
 
         # Font name
         font_name_layout = QHBoxLayout()
+        font_name_layout.setContentsMargins(0, 0, 0, 0)
+        font_name_layout.setSpacing(8)
         font_name_label = QLabel("Font:")
         self.font_combo = QFontComboBox()
         font_name_layout.addWidget(font_name_label)
@@ -119,6 +132,8 @@ class OutputTab(QWidget):
 
         # Font size
         font_size_layout = QHBoxLayout()
+        font_size_layout.setContentsMargins(0, 0, 0, 0)
+        font_size_layout.setSpacing(8)
         font_size_label = QLabel("Font Size:")
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(6, 32)
@@ -131,6 +146,7 @@ class OutputTab(QWidget):
 
         # Font bold
         font_bold_layout = QHBoxLayout()
+        font_bold_layout.setContentsMargins(0, 0, 0, 0)
         self.font_bold_check = QCheckBox("Bold")
         font_bold_layout.addWidget(self.font_bold_check)
         font_bold_layout.addStretch()
@@ -142,6 +158,8 @@ class OutputTab(QWidget):
         # Output window settings
         output_group = QGroupBox("Terminal Window Settings")
         output_layout = QFormLayout()
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.setVerticalSpacing(8)
 
         self.line_number_check = QCheckBox("Show Line Numbers")
         output_layout.addRow(self.line_number_check)
@@ -155,6 +173,9 @@ class OutputTab(QWidget):
         # History settings
         history_group = QGroupBox("History Settings")
         history_layout = QFormLayout()
+        history_layout.setContentsMargins(0, 0, 0, 0)
+        history_layout.setHorizontalSpacing(12)
+        history_layout.setVerticalSpacing(8)
         
         self.max_count_spin = QSpinBox()
         self.max_count_spin.setRange(10, 1000)
@@ -172,6 +193,8 @@ class OutputTab(QWidget):
         # History management
         management_group = QGroupBox("History Management")
         management_layout = QVBoxLayout()
+        management_layout.setContentsMargins(0, 0, 0, 0)
+        management_layout.setSpacing(8)
         
         self.clear_history_btn = QPushButton("Clear All History")
         self.clear_history_btn.clicked.connect(self.clear_history)
@@ -188,6 +211,9 @@ class OutputTab(QWidget):
         # Line ending settings
         line_ending_group = QGroupBox("Line Ending Settings")
         line_ending_layout = QFormLayout()
+        line_ending_layout.setContentsMargins(0, 0, 0, 0)
+        line_ending_layout.setHorizontalSpacing(12)
+        line_ending_layout.setVerticalSpacing(8)
         
         self.line_ending_combo = QComboBox()
         self.line_ending_combo.addItems(["CR+LF (\\r\\n)", "CR (\\r)", "LF (\\n)"])
@@ -284,15 +310,22 @@ class GeneralTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
         file_group = QGroupBox("Terminal Log Settings")
         group_layout = QVBoxLayout()
+        group_layout.setContentsMargins(0, 0, 0, 0)
+        group_layout.setSpacing(8)
 
         self.auto_save_check = QCheckBox("Automatically save terminal output whenever a connection is made")
         group_layout.addWidget(self.auto_save_check)
         group_layout.setAlignment(self.auto_save_check, Qt.AlignLeft)
 
         form_layout = QFormLayout()
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(8)
         form_layout.setLabelAlignment(Qt.AlignLeft)
         form_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
 
@@ -305,6 +338,7 @@ class GeneralTab(QWidget):
         path_widget = QWidget()
         path_layout = QHBoxLayout(path_widget)
         path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.setSpacing(8)
         path_layout.addWidget(self.save_dir_edit)
         path_layout.addWidget(browse_btn)
 
@@ -322,6 +356,8 @@ class GeneralTab(QWidget):
         # External Shell Command settings
         cmd_group = QGroupBox("External Shell Command")
         cmd_layout = QVBoxLayout()
+        cmd_layout.setContentsMargins(0, 0, 0, 0)
+        cmd_layout.setSpacing(8)
         
         self.ext_cmd_edit = QLineEdit()
         self.ext_cmd_edit.setPlaceholderText("Enter shell command here...")
@@ -356,16 +392,22 @@ class WindowsTab(QWidget):
         super().__init__()
         self.parent_dialog = parent_dialog
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
         
         # Theme settings
         theme_group = QGroupBox("Theme Settings")
         theme_layout = QVBoxLayout()
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.setSpacing(8)
 
         # Theme selection
         theme_selection_layout = QHBoxLayout()
+        theme_selection_layout.setContentsMargins(0, 0, 0, 0)
+        theme_selection_layout.setSpacing(8)
         theme_label = QLabel("Theme:")
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["default", "dark", "light"])
+        self.theme_combo.addItems(["web_dark", "web", "default", "dark", "light"])
         theme_selection_layout.addWidget(theme_label)
         theme_selection_layout.addWidget(self.theme_combo)
         theme_selection_layout.addStretch()
@@ -377,6 +419,9 @@ class WindowsTab(QWidget):
         # Command Group settings
         command_group = QGroupBox("Command Group Settings")
         command_layout = QFormLayout()
+        command_layout.setContentsMargins(0, 0, 0, 0)
+        command_layout.setHorizontalSpacing(12)
+        command_layout.setVerticalSpacing(8)
         
         self.command_group_spin = QSpinBox()
         self.command_group_spin.setRange(3, 10)
@@ -395,6 +440,8 @@ class WindowsTab(QWidget):
         # HEX Mode settings
         hex_mode_group = QGroupBox("HEX Mode Settings")
         hex_mode_layout = QVBoxLayout()
+        hex_mode_layout.setContentsMargins(0, 0, 0, 0)
+        hex_mode_layout.setSpacing(8)
         
         self.keep_hex_mode_check = QCheckBox("Keep HEX mode")
         self.keep_hex_mode_check.setToolTip("When enabled, commands with hexmode=true in YAML will be displayed in HEX mode on startup")
@@ -413,7 +460,7 @@ class WindowsTab(QWidget):
     
     def load_settings(self, settings):
         # Load Theme setting
-        self.theme_combo.setCurrentText(settings.get('theme', 'default'))
+        self.theme_combo.setCurrentText(settings.get('theme', 'web_dark'))
         
         # Load Keep HEX mode setting
         self.keep_hex_mode_check.setChecked(settings.get('keep_hex_mode', False))
@@ -468,6 +515,8 @@ class SettingsDialog(QDialog):
         self.setModal(True)  # Set as modal dialog
         
         layout = QVBoxLayout()
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(12)
         
         # Create tab widget
         self.tab_widget = QTabWidget()
@@ -488,11 +537,16 @@ class SettingsDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(8)
         button_layout.addStretch()
         
         self.apply_btn = QPushButton("Apply")
         self.ok_btn = QPushButton("OK")
         self.cancel_btn = QPushButton("Cancel")
+        self.apply_btn.setMinimumWidth(88)
+        self.ok_btn.setMinimumWidth(88)
+        self.cancel_btn.setMinimumWidth(88)
         
         self.apply_btn.clicked.connect(self.apply_settings)
         self.ok_btn.clicked.connect(self.accept_settings)
@@ -520,7 +574,7 @@ class SettingsDialog(QDialog):
             # Return default settings
             settings = {
                 'font': {'name': 'Monaco', 'size': 11, 'bold': False},
-                'theme': 'default',
+                'theme': 'web_dark',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'terminal': {'line_ending': 'CR+LF'},
                 'general': {'save_directory': '', 'auto_save_enabled': False},
@@ -553,7 +607,7 @@ class SettingsDialog(QDialog):
                 
                 # Ensure defaults
                 settings.setdefault('font', {'name': 'Monaco', 'size': 11, 'bold': False})
-                settings.setdefault('theme', 'default')
+                settings.setdefault('theme', 'web_dark')
                 settings.setdefault('output_window', {'show_line_numbers': False, 'show_time': False})
                 settings.setdefault('terminal', {'line_ending': 'CR+LF'})
                 settings.setdefault('general', {'save_directory': '', 'auto_save_enabled': False})
@@ -563,7 +617,7 @@ class SettingsDialog(QDialog):
                 print(f"Error loading settings: {e}")
                 settings = {
                     'font': {'name': 'Monaco', 'size': 11, 'bold': False},
-                    'theme': 'default',
+                    'theme': 'web_dark',
                     'output_window': {'show_line_numbers': False, 'show_time': False},
                     'terminal': {'line_ending': 'CR+LF'},
                     'general': {'save_directory': '', 'auto_save_enabled': False},

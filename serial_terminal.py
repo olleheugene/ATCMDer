@@ -20,6 +20,45 @@ from sequence_chart import SequenceChartWindow
 
 LINEEDIT_MAX_NUMBER = 10
 
+COMMON_THEME_QSS = """
+QWidget#collapseRail,
+QWidget#collapseButtonShell,
+QWidget#sidePanel {
+    border: none;
+}
+
+QCheckBox::indicator:checked {
+    image: url(resources/checkmark.svg);
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+}
+
+QSplitter::handle {
+    background-color: transparent;
+    border: none;
+}
+
+QSplitter::handle:horizontal {
+    width: 1px;
+}
+
+QSplitter::handle:vertical {
+    height: 1px;
+}
+"""
+
+WEB_DIVIDER_QSS = """
+
+QFrame#collapseButtonDivider {
+    background-color: transparent;
+    image: url(resources/collapse-divider.svg);
+    border: none;
+}
+"""
+
 import serial.tools.list_ports
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
@@ -59,6 +98,23 @@ class SerialTerminal(QMainWindow):
                     child.widget().deleteLater()
                 elif child.layout() is not None:
                     SerialTerminal.clear_layout(child.layout())
+
+    @staticmethod
+    def format_baudrate(baudrate):
+        return f"{int(baudrate)} bps"
+
+    @staticmethod
+    def parse_baudrate(text, fallback=115200):
+        match = re.search(r"\d+", str(text))
+        if not match:
+            return fallback
+        return int(match.group(0))
+
+    @staticmethod
+    def tune_combo_line_edit(combo):
+        if combo.lineEdit():
+            combo.lineEdit().setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            combo.lineEdit().setTextMargins(2, 0, 0, 0)
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
@@ -170,60 +226,56 @@ class SerialTerminal(QMainWindow):
         help_menu.addAction(shortcut_action)
 
         self.left_widget = QWidget()
+        self.left_widget.setObjectName("sidePanel")
 
         self.serial_port_combo = QComboBox()
         self.serial_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.serial_port_combo.setEditable(True)
-        port_layout = QHBoxLayout()
-        port_layout.setSpacing(0)
-        port_layout.setContentsMargins(0, 0, 0, 0)
+        self.serial_port_combo.lineEdit().setPlaceholderText("PORT")
+        self.tune_combo_line_edit(self.serial_port_combo)
         self.port_label = QLabel("Port:")
         self.port_label.setContentsMargins(5, 0, 5, 0)
-        port_layout.addWidget(self.port_label)
-        port_layout.addWidget(self.serial_port_combo)
 
         self.serial_port_combo.currentTextChanged.connect(self.on_port_changed)
         self.baudrate_combo = QComboBox()
+        self.baudrate_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         baudrates = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000"]
-        self.baudrate_combo.addItems(baudrates)
-        self.baudrate_combo.setCurrentText(str(self.baudrate))
+        self.baudrate_combo.addItems([self.format_baudrate(baudrate) for baudrate in baudrates])
+        self.baudrate_combo.setCurrentText(self.format_baudrate(self.baudrate))
         self.baudrate_combo.setEditable(True)
-        from PySide6.QtGui import QIntValidator
-        self.baudrate_combo.lineEdit().setValidator(QIntValidator(1, 10000000, self))
+        self.baudrate_combo.lineEdit().setPlaceholderText("BAUDRATE")
+        self.tune_combo_line_edit(self.baudrate_combo)
+        baudrate_regex = QRegularExpression(r"^\s*\d{1,8}(\s*bps)?\s*$")
+        self.baudrate_combo.lineEdit().setValidator(QRegularExpressionValidator(baudrate_regex, self))
         self.baudrate_combo.currentTextChanged.connect(self.on_baudrate_changed)
-        self.baudrate_combo.setContentsMargins(0, 0, 20, 0)
-        self.connect_btn = QPushButton("Connect")
+        self.baudrate_combo.lineEdit().editingFinished.connect(self.normalize_baudrate_display)
+        self.baudrate_combo.setContentsMargins(0, 0, 0, 0)
+        self.connect_btn = QPushButton("CONNECT")
+        self.connect_btn.setObjectName("connectButton")
         self.connect_btn.setCheckable(True)
         self.connect_btn.clicked.connect(self.toggle_serial_connection)
-        self.connect_btn.setFixedWidth(90) 
+        self.connect_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.connect_btn.setToolTip(f"Connect to selected port")
-        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn = QPushButton()
+        self.refresh_btn.setObjectName("toolbarIconButton")
+        self.refresh_btn.setIcon(QIcon(utils.get_resources("refresh.svg")))
+        self.refresh_btn.setIconSize(QSize(16, 16))
         self.refresh_btn.clicked.connect(self.refresh_serial_ports)
-        self.refresh_btn.setFixedWidth(80) 
+        self.refresh_btn.setFixedSize(28, 28)
+        self.refresh_btn.setToolTip("Refresh port list")
         self.baud_label = QLabel("Baudrate:")
 
         self.left_widget_layout = QVBoxLayout()
-        self.left_widget_layout.setSpacing(3) 
-        self.serial_group = QGroupBox("Serial Settings")
-        left_widget_serial_settings_1st_layout = QVBoxLayout()
-        left_widget_serial_settings_1st_layout.setSpacing(1)
-        # left_widget_serial_group_layout.setContentsMargins(0, 0, 0, 0)
-        left_widget_serial_settings_1st_layout.addLayout(port_layout)
-
-        left_widget_serial_settings_2nd_layout = QHBoxLayout()
-        left_widget_serial_settings_2nd_layout.setSpacing(5)
-        # left_widget_serial_settings_2nd_layout.setContentsMargins(20, 0, 20, 0)
-        left_widget_serial_settings_2nd_layout.addWidget(self.baud_label)
-        left_widget_serial_settings_2nd_layout.addWidget(self.baudrate_combo)
-        left_widget_serial_settings_2nd_layout.addWidget(self.connect_btn)
-        left_widget_serial_settings_2nd_layout.addWidget(self.refresh_btn)
-        left_widget_serial_settings_2nd_layout.setContentsMargins(5, 0, 5, 0)
-        left_widget_serial_settings_1st_layout.addLayout(left_widget_serial_settings_2nd_layout)
-        self.serial_group.setLayout(left_widget_serial_settings_1st_layout)
+        self.left_widget_layout.setContentsMargins(10, 10, 10, 10)
+        self.left_widget_layout.setSpacing(8)
+        self.serial_group = QGroupBox("SERIAL SETTINGS")
+        self.serial_group.setObjectName("serialSettingsGroup")
+        self._setup_serial_group_layout(horizontal=False)
         self.left_widget_layout.addWidget(self.serial_group)
 
         # --- Add button group for predefined commands ---
-        cmd_actions_group = QGroupBox("Command Groups")
+        cmd_actions_group = QGroupBox("COMMAND GROUPS")
+        cmd_actions_group.setObjectName("commandGroupsGroup")
         cmd_actions_layout = QHBoxLayout()
         cmd_actions_layout.setSpacing(4)
         
@@ -265,6 +317,7 @@ class SerialTerminal(QMainWindow):
             row_widget = QWidget()
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
+            checkbox.setFixedWidth(18)
             lineedit = QLineEdit()
             
             mode_label = QLabel()
@@ -307,7 +360,8 @@ class SerialTerminal(QMainWindow):
             checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
             lineedit.textChanged.connect(make_text_change_handler(i))
     
-            row_layout.addWidget(checkbox)
+            row_layout.addWidget(checkbox, 0, Qt.AlignmentFlag.AlignCenter)
+            row_layout.addSpacing(3)
             row_layout.addWidget(lineedit)
 
             label_btn_layout = QHBoxLayout()
@@ -319,6 +373,7 @@ class SerialTerminal(QMainWindow):
             row_layout.addLayout(label_btn_layout)
     
             row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
             row_widget.setLayout(row_layout)
             self.left_widget_layout.addWidget(row_widget)
     
@@ -330,15 +385,18 @@ class SerialTerminal(QMainWindow):
         self.left_widget.setLayout(self.left_widget_layout)
         self.terminal_widget = TerminalWidget(font_family=self.font_family, font_size=self.font_size)
         self.terminal_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.terminal_widget.setMinimumWidth(360)
         self.terminal_widget.installEventFilter(self)
         self.terminal_widget.request_paste.connect(self.handle_paste)
         self.clear_btn = QPushButton()
+        self.clear_btn.setObjectName("toolbarIconButton")
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
         self.clear_btn.setFixedSize(28, 28)
         self.clear_btn.setIconSize(QSize(20, 20))
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
         self.save_btn = QPushButton()
+        self.save_btn.setObjectName("toolbarIconButton")
         self.save_btn.setIcon(QIcon(utils.get_resources(utils.SAVE_ICON_NAME)))
         self.save_btn.setToolTip("Save terminal output to file")
         self.save_btn.setFixedSize(28, 28)
@@ -346,6 +404,7 @@ class SerialTerminal(QMainWindow):
         self.save_btn.clicked.connect(self.save_terminal_output)
         
         self.chart_btn = QPushButton()
+        self.chart_btn.setObjectName("toolbarIconButton")
         self.chart_btn.setIcon(QIcon(utils.get_resources(utils.CHART_ICON_NAME)))
         self.chart_btn.setFixedSize(28, 28)
         self.chart_btn.setIconSize(QSize(20, 20))
@@ -353,6 +412,7 @@ class SerialTerminal(QMainWindow):
         self.chart_btn.clicked.connect(self.show_sequence_chart)
         
         self.ext_cmd_btn = QPushButton()
+        self.ext_cmd_btn.setObjectName("toolbarIconButton")
         self.ext_cmd_btn.setIcon(QIcon(utils.get_resources(utils.EXTERNAL_CMD_ICON_NAME)))
         self.ext_cmd_btn.setFixedSize(28, 28)
         self.ext_cmd_btn.setIconSize(QSize(20, 20))
@@ -360,39 +420,68 @@ class SerialTerminal(QMainWindow):
         self.ext_cmd_btn.clicked.connect(self.execute_external_command)
         
         self.right_layout = QVBoxLayout()
+        self.right_layout.setContentsMargins(10, 10, 10, 10)
+        self.right_layout.setSpacing(8)
         self.top_right_btn_layout = QHBoxLayout()
-        self.top_right_btn_layout.setSpacing(5)
+        self.top_right_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self.top_right_btn_layout.setSpacing(6)
         self.top_right_btn_layout.addStretch()
         self.top_right_btn_layout.addWidget(self.ext_cmd_btn)
         self.top_right_btn_layout.addWidget(self.chart_btn)
         self.top_right_btn_layout.addWidget(self.clear_btn)
         self.top_right_btn_layout.addWidget(self.save_btn)
-        btn_v_layout = QVBoxLayout()
-        btn_v_layout.addSpacing(10)
-        btn_v_layout.addLayout(self.top_right_btn_layout)
-        self.right_layout.addLayout(btn_v_layout)
+        self.right_layout.addLayout(self.top_right_btn_layout)
         self.right_layout.addWidget(self.terminal_widget)
         self.right_widget = QWidget()
+        self.right_widget.setObjectName("terminalPanel")
+        self.right_widget.setMinimumWidth(380)
         self.right_widget.setLayout(self.right_layout)
         self.toggle_btn = QPushButton()
-        self.toggle_btn.setFixedWidth(24)
+        self.toggle_btn.setObjectName("collapseButton")
+        self.toggle_btn.setFixedSize(28, 46)
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.setToolTip("Expand/Collapse the terminal window")
         self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
         self.toggle_btn.clicked.connect(self.toggle_left_panel)
         btn_widget = QWidget()
+        btn_widget.setObjectName("collapseRail")
+        btn_widget.setFixedWidth(40)
         btn_layout = QVBoxLayout()
         btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
+        btn_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        collapse_button_shell = QWidget()
+        collapse_button_shell.setObjectName("collapseButtonShell")
+        collapse_button_shell.setFixedSize(36, 54)
+        collapse_button_layout = QHBoxLayout(collapse_button_shell)
+        collapse_button_layout.setContentsMargins(0, 1, 0, 1)
+        collapse_button_layout.setSpacing(5)
+        right_divider = QLabel()
+        right_divider.setObjectName("collapseButtonDivider")
+        right_divider.setFixedSize(3, 52)
+        right_divider.setScaledContents(True)
+        right_divider.setPixmap(QIcon(utils.get_resources("collapse-divider.svg")).pixmap(QSize(3, 52)))
+        self.collapse_divider = right_divider
+        collapse_button_layout.addWidget(self.toggle_btn)
+        collapse_button_layout.addWidget(right_divider)
         btn_layout.addStretch()
-        btn_layout.addWidget(self.toggle_btn)
+        btn_layout.addWidget(collapse_button_shell)
         btn_layout.addStretch()
         btn_widget.setLayout(btn_layout)
         splitter = QSplitter()
         splitter.addWidget(self.left_widget)
         splitter.addWidget(btn_widget)
         splitter.addWidget(self.right_widget)
-        splitter.setSizes([250, 24, 850])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 0)
+        splitter.setStretchFactor(2, 1)
+        splitter.setHandleWidth(1)
+        splitter.setCollapsible(1, False)
+        splitter.setCollapsible(2, False)
+        splitter.setSizes([260, 40, 850])
+        splitter.splitterMoved.connect(self.save_splitter_sizes)
         central = QWidget()
+        central.setObjectName("appRoot")
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(splitter)
@@ -413,7 +502,7 @@ class SerialTerminal(QMainWindow):
         # Set default YAML file as current
         self.current_cmdlist_file = utils.PREDEFINED_COMMAND_LIST1
         self.load_checkbox_lineedit(self.current_cmdlist_file)
-        self.sequential_btn = QPushButton("Sequential Send")
+        self.sequential_btn = QPushButton("SEQUENTIAL SEND")
         self.sequential_btn.clicked.connect(self.sequential_send_commands)
         self.left_widget_layout.addWidget(self.sequential_btn)
         self.refresh_serial_ports(auto_connect=True)
@@ -436,6 +525,16 @@ class SerialTerminal(QMainWindow):
 
         # Initialize command group button styles
         self.update_command_group_button_styles()
+        QTimer.singleShot(0, self.fit_window_height_to_content)
+
+    def fit_window_height_to_content(self):
+        self.left_widget.adjustSize()
+        content_height = self.left_widget.sizeHint().height()
+        menu_height = self.menuBar().sizeHint().height()
+        status_height = self.statusBar().sizeHint().height()
+        target_height = content_height + menu_height + status_height + 2
+        self.setMinimumHeight(target_height)
+        self.resize(self.width(), target_height)
 
     def eventFilter(self, obj, event):
         key = None
@@ -1548,21 +1647,34 @@ class SerialTerminal(QMainWindow):
 
     def apply_theme(self, theme_name):
         """Apply the specified theme"""
-        if theme_name == "default":
-            QApplication.instance().setStyleSheet("")
-        else:
+        style = ""
+        if theme_name != "default":
             theme_path = utils.get_resources(theme_name + ".css")
             if os.path.exists(theme_path):
-                with open(theme_path, "r") as f:
+                with open(theme_path, "r", encoding="utf-8") as f:
                     style = f.read()
-
-                    down_arrow_path = utils.get_resources("down_arrow.png")
-                    down_arrow_path = down_arrow_path.replace("\\", "/")
-                    style = style.replace("url(resources/down_arrow.png)", f"url({down_arrow_path})")
-                    
-                    QApplication.instance().setStyleSheet(style)
             else:
                 print(f"Theme file not found: {theme_path}")
+
+        style += "\n" + COMMON_THEME_QSS
+        style += "\n" + WEB_DIVIDER_QSS
+
+        for resource_name in ("down_arrow.png", "checkbox.png", "collapse-divider.svg", "checkmark.svg"):
+            resource_path = utils.get_resources(resource_name).replace("\\", "/")
+            style = style.replace(f"url(resources/{resource_name})", f"url({resource_path})")
+
+        QApplication.instance().setStyleSheet(style)
+        self.update_collapse_divider_visibility(theme_name)
+        self.update_theme_icons(theme_name)
+
+    def update_collapse_divider_visibility(self, theme_name):
+        if hasattr(self, "collapse_divider"):
+            self.collapse_divider.setVisible(True)
+
+    def update_theme_icons(self, theme_name):
+        if hasattr(self, "refresh_btn"):
+            icon_name = "refresh-dark.svg" if theme_name in {"web", "light", "default"} else "refresh.svg"
+            self.refresh_btn.setIcon(QIcon(utils.get_resources(icon_name)))
 
     def on_port_changed(self, port):
         self.selected_port = port
@@ -1572,11 +1684,17 @@ class SerialTerminal(QMainWindow):
             self.toggle_serial_connection()
 
     def on_baudrate_changed(self, baudrate):
-        self.baudrate = int(baudrate)
+        parsed_baudrate = self.parse_baudrate(baudrate, self.baudrate)
+        if parsed_baudrate == self.baudrate:
+            return
+        self.baudrate = parsed_baudrate
         # If connected, disconnect and reconnect with new baudrate
         if self.serial and self.serial.is_open:
             self.toggle_serial_connection()
             self.toggle_serial_connection()
+
+    def normalize_baudrate_display(self):
+        self.baudrate_combo.setCurrentText(self.format_baudrate(self.baudrate))
 
     def toggle_serial_connection(self):
         if self.serial and self.serial.is_open:
@@ -1586,7 +1704,7 @@ class SerialTerminal(QMainWindow):
             self.serial.close()
             self.update_status_bar("Disconnected")
             self.connect_btn.setChecked(False)
-            self.connect_btn.setText("Connect")
+            self.connect_btn.setText("CONNECT")
             self.connect_btn.setToolTip(f"Connect Serial Port")
         else:
             if not self.selected_port:
@@ -1621,7 +1739,7 @@ class SerialTerminal(QMainWindow):
                 self.thread.start()
                 self.update_status_bar(f"Connected to {self.selected_port} @ {self.baudrate} bps")
                 self.connect_btn.setChecked(True)
-                self.connect_btn.setText("Disconnect")
+                self.connect_btn.setText("DISCONNECT")
                 self.save_recent_port(self.selected_port)  # Save recent port
                 self.connect_btn.setToolTip(f"Disconnect Serial Port")
             except (serial.SerialException, Exception) as e:
@@ -1636,7 +1754,7 @@ class SerialTerminal(QMainWindow):
         if self.serial and self.serial.is_open:
             self.serial.close()
             self.connect_btn.setChecked(False)
-            self.connect_btn.setText("Connect")
+            self.connect_btn.setText("CONNECT")
         ports = list_serial_ports()
         self.serial_port_combo.clear()
         self.serial_port_combo.addItems(ports)
@@ -1650,7 +1768,7 @@ class SerialTerminal(QMainWindow):
                     self.serial_port_combo.setCurrentText(port_candidate)
                     self.selected_port = port_candidate
                     self.baudrate = port_settings.get("baudrate", self.baudrate)
-                    self.baudrate_combo.setCurrentText(str(self.baudrate))
+                    self.baudrate_combo.setCurrentText(self.format_baudrate(self.baudrate))
                     self.parity = port_settings.get("parity", "None")
                     self.flow_control = port_settings.get("flow_control", "None")
                     self.toggle_serial_connection()
@@ -1682,43 +1800,35 @@ class SerialTerminal(QMainWindow):
 
         if horizontal:
             layout = QHBoxLayout()
-            layout.setSpacing(0)
-            layout.setContentsMargins(5, 2, 5, 2)
+            layout.setSpacing(6)
+            layout.setContentsMargins(0, 0, 0, 0)
             
-            
-            layout.addWidget(self.port_label)
             layout.addWidget(self.serial_port_combo)
-            layout.addWidget(self.baud_label)
             layout.addWidget(self.baudrate_combo)
             layout.addWidget(self.connect_btn)
             layout.addWidget(self.refresh_btn)
 
             self.serial_group.setTitle("")
+            self.serial_group.setObjectName("serialSettingsInlineGroup")
             self.serial_group.setMinimumWidth(700) 
 
         else:
+            self.serial_group.setObjectName("serialSettingsGroup")
             layout = QVBoxLayout()
-            layout.setSpacing(3)
-            # layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(6)
+            layout.setContentsMargins(0, 0, 0, 0)
             
             port_layout = QHBoxLayout()
-            port_layout.setSpacing(5)
-            # port_layout.setContentsMargins(5, 0, 5, 0)
-            port_layout.addWidget(self.port_label)
+            port_layout.setSpacing(6)
+            port_layout.setContentsMargins(0, 0, 0, 0)
             port_layout.addWidget(self.serial_port_combo)
-            
-            baud_btn_layout = QHBoxLayout()
-            baud_btn_layout.setSpacing(0)
-            baud_btn_layout.setContentsMargins(5, 0, 5, 0)
-            baud_btn_layout.addWidget(self.baud_label)
-            baud_btn_layout.addWidget(self.baudrate_combo)
-            baud_btn_layout.addWidget(self.connect_btn)
-            baud_btn_layout.addWidget(self.refresh_btn)
+            port_layout.addWidget(self.refresh_btn)
             
             layout.addLayout(port_layout)
-            layout.addLayout(baud_btn_layout)
+            layout.addWidget(self.baudrate_combo)
+            layout.addWidget(self.connect_btn)
 
-            self.serial_group.setTitle("Serial Settings")
+            self.serial_group.setTitle("SERIAL SETTINGS")
             self.serial_group.setMinimumWidth(0)
             # self.serial_group.setMinimumHeight(90)
 
@@ -1729,10 +1839,10 @@ class SerialTerminal(QMainWindow):
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.RIGHT_ARROW_ICON_NAME)))
             self.serial_group.setParent(None)
             self._setup_serial_group_layout(horizontal=True)
-            self.top_right_btn_layout.setSpacing(0)
+            self.top_right_btn_layout.setSpacing(8)
             self.top_right_btn_layout.setContentsMargins(0, 0, 0, 0)
-            self.right_layout.setSpacing(0)
-            self.right_layout.setContentsMargins(0, 0, 8, 5)
+            self.right_layout.setSpacing(8)
+            self.right_layout.setContentsMargins(10, 10, 10, 10)
             self.top_right_btn_layout.insertWidget(0, self.serial_group)
             self.splitter.widget(0).hide()
         else:
@@ -2156,7 +2266,7 @@ class SerialTerminal(QMainWindow):
                 self.running = False
                 QTimer.singleShot(0, lambda: self.update_status_bar("Port error. Disconnected."))
                 QTimer.singleShot(0, lambda: self.connect_btn.setChecked(False))
-                QTimer.singleShot(0, lambda: self.connect_btn.setText("Connect"))
+                QTimer.singleShot(0, lambda: self.connect_btn.setText("CONNECT"))
                 if self.serial and self.serial.is_open:
                     try:
                         self.serial.close()
@@ -2172,7 +2282,7 @@ class SerialTerminal(QMainWindow):
                     pass
                 self.reconnect_signal.emit()
                 self.connect_btn.setChecked(False)
-                self.connect_btn.setText("Connect")
+                self.connect_btn.setText("CONNECT")
                 self.running = False
                 break
 
@@ -2209,7 +2319,7 @@ class SerialTerminal(QMainWindow):
             if commands_to_send:
                 # Disable the sequential button during execution
                 self.sequential_btn.setEnabled(False)
-                self.sequential_btn.setText("Sending...")
+                self.sequential_btn.setText("SENDING...")
                 
                 # Start sequential sending in a separate thread
                 import threading
@@ -2290,7 +2400,7 @@ class SerialTerminal(QMainWindow):
     def on_sequential_complete(self, success, message):
         """Handle sequential send completion in the main thread"""
         self.sequential_btn.setEnabled(True)
-        self.sequential_btn.setText("Sequential Send")
+        self.sequential_btn.setText("SEQUENTIAL SEND")
         self.update_status_bar(message)
     
     def load_font_settings(self):
@@ -2397,7 +2507,7 @@ class SerialTerminal(QMainWindow):
             self.thread.start()
             self.update_status_bar(f"Reconnected to {self.selected_port} @ {self.baudrate} bps")
             self.connect_btn.setChecked(True)
-            self.connect_btn.setText("Disconnect")
+            self.connect_btn.setText("DISCONNECT")
             self.save_recent_port(self.selected_port)
         except serial.SerialException as e:
             self.update_status_bar(f"Reconnect failed: {e}")
@@ -2463,9 +2573,9 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.set_show_timestamps(settings['output_window']['show_time'])
         
         # Apply theme settings - handle both string and dict formats
-        theme = settings.get('theme', 'default')
+        theme = settings.get('theme', 'web_dark')
         if isinstance(theme, dict):
-            theme_name = theme.get('name', 'default')
+            theme_name = theme.get('name', 'web_dark')
         else:
             theme_name = theme  # theme is already a string
         
@@ -2500,7 +2610,7 @@ class SerialTerminal(QMainWindow):
         new_baudrate = int(serial_settings.get('baudrate', self.baudrate))
         if self.baudrate != new_baudrate:
             self.baudrate = new_baudrate
-            self.baudrate_combo.setCurrentText(str(self.baudrate))
+            self.baudrate_combo.setCurrentText(self.format_baudrate(self.baudrate))
             is_serial_setting_changed = True
             
         new_parity = serial_settings.get('parity', self.parity)
@@ -2527,6 +2637,29 @@ class SerialTerminal(QMainWindow):
         else:
             self.ext_cmd_btn.setToolTip("Run External Shell Command\n(No command configured)")
 
+    def save_splitter_sizes(self, *_args):
+        try:
+            settings = {}
+
+            if os.path.exists(utils.USER_SETTINGS):
+                with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+
+                if isinstance(data, dict):
+                    settings = data.copy()
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            settings.update(item)
+
+            settings.setdefault("ui", {})
+            settings["ui"]["splitter_sizes"] = self.splitter.sizes()
+
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
+        except Exception as e:
+            print(f"Warning: Could not save splitter sizes: {e}")
+
     def load_settings(self):
         """Load settings from YAML file"""
         try:
@@ -2545,11 +2678,12 @@ class SerialTerminal(QMainWindow):
             # Ensure all required keys exist with defaults
             default_settings = {
                 'font': {'name': 'Monaco', 'size': 14, 'bold': False},
-                'theme': 'default',  # Keep as string for consistency
+                'theme': 'web_dark',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100},
                 'keep_hex_mode': False,
-                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
+                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'},
+                'ui': {'splitter_sizes': [260, 40, 850]}
             }
             
             # Merge with defaults
@@ -2568,11 +2702,12 @@ class SerialTerminal(QMainWindow):
             # Return default settings
             return {
                 'font': {'name': 'Monaco', 'size': 14, 'bold': False},
-                'theme': 'default',  # Keep as string
+                'theme': 'web_dark',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100},
                 'keep_hex_mode': False,
-                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
+                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'},
+                'ui': {'splitter_sizes': [260, 40, 850]}
             }
 
     def apply_initial_settings(self):
@@ -2614,7 +2749,12 @@ class SerialTerminal(QMainWindow):
         self.parity = serial_settings.get('parity', 'None')
         self.flow_control = serial_settings.get('flow_control', 'None')
         self.serial_port_combo.setCurrentText(self.selected_port)
-        self.baudrate_combo.setCurrentText(str(self.baudrate))
+        self.baudrate_combo.setCurrentText(self.format_baudrate(self.baudrate))
+
+        ui_settings = self.settings.get('ui', {})
+        splitter_sizes = ui_settings.get('splitter_sizes', [260, 40, 850])
+        if isinstance(splitter_sizes, list) and len(splitter_sizes) == 3:
+            self.splitter.setSizes(splitter_sizes)
         
         # Update UI elements
         self.terminal_widget.update_scrollbar()
