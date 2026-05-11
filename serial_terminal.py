@@ -324,6 +324,8 @@ class SerialTerminal(QMainWindow):
         self.left_widget_layout.setSpacing(8)
         self.serial_group = QGroupBox("SERIAL SETTINGS")
         self.serial_group.setObjectName("serialSettingsGroup")
+        self.serial_inline_widget = QWidget()
+        self.serial_inline_widget.setObjectName("serialSettingsInlineGroup")
         self._setup_serial_group_layout(horizontal=False)
         self.left_widget_layout.addWidget(self.serial_group)
 
@@ -1983,22 +1985,24 @@ class SerialTerminal(QMainWindow):
         self.connect_btn.setParent(None)
         self.refresh_btn.setParent(None)
 
-        if self.serial_group.layout() is not None:
-            QWidget().setLayout(self.serial_group.layout())
+        target_widget = self.serial_inline_widget if horizontal else self.serial_group
+
+        if target_widget.layout() is not None:
+            QWidget().setLayout(target_widget.layout())
 
         if horizontal:
             layout = QHBoxLayout()
             layout.setSpacing(6)
             layout.setContentsMargins(0, 0, 0, 0)
+            layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             
-            layout.addWidget(self.serial_port_combo)
-            layout.addWidget(self.baudrate_combo)
-            layout.addWidget(self.connect_btn)
-            layout.addWidget(self.refresh_btn)
+            layout.addWidget(self.serial_port_combo, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addWidget(self.baudrate_combo, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addWidget(self.connect_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addWidget(self.refresh_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-            self.serial_group.setTitle("")
-            self.serial_group.setObjectName("serialSettingsInlineGroup")
-            self.serial_group.setMinimumWidth(700) 
+            self.serial_inline_widget.setMinimumWidth(700)
+            self.serial_inline_widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
 
         else:
             self.serial_group.setObjectName("serialSettingsGroup")
@@ -2020,7 +2024,7 @@ class SerialTerminal(QMainWindow):
             self.serial_group.setMinimumWidth(0)
             # self.serial_group.setMinimumHeight(90)
 
-        self.serial_group.setLayout(layout)
+        target_widget.setLayout(layout)
 
     def toggle_left_panel(self, checked=False, persist=True, target_visible=None, capture_expanded_sizes=True):
         new_visible = (not self.left_panel_visible) if target_visible is None else target_visible
@@ -2032,15 +2036,17 @@ class SerialTerminal(QMainWindow):
                 self.expanded_splitter_sizes = self.splitter.sizes()
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.RIGHT_ARROW_ICON_NAME)))
             self.serial_group.setParent(None)
+            self.serial_inline_widget.setParent(None)
             self._setup_serial_group_layout(horizontal=True)
             self.top_right_btn_layout.setSpacing(8)
             self.top_right_btn_layout.setContentsMargins(0, 0, 0, 0)
             self.right_layout.setSpacing(8)
             self.right_layout.setContentsMargins(10, 10, 10, 10)
-            self.top_right_btn_layout.insertWidget(0, self.serial_group)
+            self.top_right_btn_layout.insertWidget(0, self.serial_inline_widget, 0, Qt.AlignmentFlag.AlignVCenter)
             self.splitter.widget(0).hide()
         else:
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
+            self.serial_inline_widget.setParent(None)
             self.serial_group.setParent(None)
             self._setup_serial_group_layout(horizontal=False)
             self.left_widget_layout.insertWidget(0, self.serial_group)

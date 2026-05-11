@@ -60,7 +60,11 @@ QGroupBox::title {
 }
 
 QGroupBox#serialSettingsInlineGroup {
-    padding: 10px 14px;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
 }
 
 QGroupBox#commandGroupsGroup {
@@ -164,6 +168,12 @@ QComboBox QAbstractItemView::item {
     min-height: 24px;
     padding: 5px 8px;
     border-radius: 4px;
+}
+
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {
+    background-color: #4a90e2;
+    color: #ffffff;
 }
 
 QPushButton {
