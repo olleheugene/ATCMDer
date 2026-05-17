@@ -19,6 +19,9 @@ from settings_dialog import SettingsDialog
 from sequence_chart import SequenceChartWindow
 
 LINEEDIT_MAX_NUMBER = 10
+CONNECT_BUTTON_MIN_WIDTH = 108
+CONNECT_BUTTON_MAX_WIDTH = 124
+SERIAL_INLINE_MIN_WIDTH = 520
 
 COMMON_THEME_QSS = """
 QWidget#collapseRail,
@@ -309,7 +312,9 @@ class SerialTerminal(QMainWindow):
         self.connect_btn.setObjectName("connectButton")
         self.connect_btn.setCheckable(True)
         self.connect_btn.clicked.connect(self.toggle_serial_connection)
-        self.connect_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.connect_btn.setMinimumWidth(CONNECT_BUTTON_MIN_WIDTH)
+        self.connect_btn.setMaximumWidth(CONNECT_BUTTON_MAX_WIDTH)
+        self.connect_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.connect_btn.setToolTip(f"Connect to selected port")
         self.refresh_btn = QPushButton()
         self.refresh_btn.setObjectName("toolbarIconButton")
@@ -482,6 +487,19 @@ class SerialTerminal(QMainWindow):
         self.ext_cmd_btn.setIconSize(QSize(20, 20))
         self.ext_cmd_btn.setToolTip("Run External Shell Command")
         self.ext_cmd_btn.clicked.connect(self.execute_external_command)
+
+        self.terminal_action_widget = QWidget()
+        self.terminal_action_widget.setObjectName("terminalActionButtons")
+        self.terminal_action_layout = QHBoxLayout(self.terminal_action_widget)
+        self.terminal_action_layout.setContentsMargins(0, 0, 0, 0)
+        self.terminal_action_layout.setSpacing(6)
+        self.terminal_action_layout.addWidget(self.ext_cmd_btn)
+        self.terminal_action_layout.addWidget(self.chart_btn)
+        self.terminal_action_layout.addWidget(self.clear_btn)
+        self.terminal_action_layout.addWidget(self.save_btn)
+        self.terminal_action_widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self._setup_serial_group_layout(horizontal=False)
+        self.left_widget.setMinimumWidth(self._expanded_left_panel_min_width())
         
         self.right_layout = QVBoxLayout()
         self.right_layout.setContentsMargins(10, 10, 10, 10)
@@ -490,10 +508,6 @@ class SerialTerminal(QMainWindow):
         self.top_right_btn_layout.setContentsMargins(0, 0, 0, 0)
         self.top_right_btn_layout.setSpacing(6)
         self.top_right_btn_layout.addStretch()
-        self.top_right_btn_layout.addWidget(self.ext_cmd_btn)
-        self.top_right_btn_layout.addWidget(self.chart_btn)
-        self.top_right_btn_layout.addWidget(self.clear_btn)
-        self.top_right_btn_layout.addWidget(self.save_btn)
         self.right_layout.addLayout(self.top_right_btn_layout)
         self.right_layout.addWidget(self.terminal_widget)
         self.right_widget = QWidget()
@@ -554,6 +568,7 @@ class SerialTerminal(QMainWindow):
         self.splitter = splitter
         self.left_panel_visible = True
         self.expanded_splitter_sizes = [260, 40, 850]
+        self.update_minimum_window_width()
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
         
@@ -1971,6 +1986,8 @@ class SerialTerminal(QMainWindow):
         self.baudrate_combo.setParent(None)
         self.connect_btn.setParent(None)
         self.refresh_btn.setParent(None)
+        if hasattr(self, "terminal_action_widget"):
+            self._detach_terminal_action_widget()
 
         target_widget = self.serial_inline_widget if horizontal else self.serial_group
 
@@ -1988,7 +2005,7 @@ class SerialTerminal(QMainWindow):
             layout.addWidget(self.connect_btn, 0, Qt.AlignmentFlag.AlignVCenter)
             layout.addWidget(self.refresh_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-            self.serial_inline_widget.setMinimumWidth(700)
+            self.serial_inline_widget.setMinimumWidth(SERIAL_INLINE_MIN_WIDTH)
             self.serial_inline_widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
 
         else:
@@ -2005,13 +2022,84 @@ class SerialTerminal(QMainWindow):
             
             layout.addLayout(port_layout)
             layout.addWidget(self.baudrate_combo)
-            layout.addWidget(self.connect_btn)
+
+            connect_layout = QHBoxLayout()
+            connect_layout.setSpacing(6)
+            connect_layout.setContentsMargins(0, 0, 0, 0)
+            connect_layout.addWidget(self.connect_btn)
+            if hasattr(self, "terminal_action_widget"):
+                connect_layout.addWidget(self.terminal_action_widget, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addLayout(connect_layout)
 
             self.serial_group.setTitle("SERIAL SETTINGS")
-            self.serial_group.setMinimumWidth(0)
+            self.serial_group.setMinimumWidth(self._expanded_serial_group_min_width())
             # self.serial_group.setMinimumHeight(90)
 
         target_widget.setLayout(layout)
+
+    def _expanded_serial_group_min_width(self):
+        action_width = self.terminal_action_widget.sizeHint().width() if hasattr(self, "terminal_action_widget") else 0
+        refresh_width = self.refresh_btn.sizeHint().width()
+        group_padding = 30
+        row_spacing = 6
+        port_width = 126
+        baudrate_width = 126
+        connect_row_width = CONNECT_BUTTON_MIN_WIDTH + action_width + row_spacing
+        port_row_width = port_width + refresh_width + row_spacing
+        return max(port_row_width, baudrate_width, connect_row_width) + group_padding
+
+    def _expanded_left_panel_min_width(self):
+        layout_margins = self.left_widget_layout.contentsMargins()
+        return self._expanded_serial_group_min_width() + layout_margins.left() + layout_margins.right()
+
+    def _collapsed_terminal_min_width(self):
+        right_margins = self.right_layout.contentsMargins()
+        top_spacing = self.top_right_btn_layout.spacing() if hasattr(self, "top_right_btn_layout") else 6
+        action_width = self.terminal_action_widget.sizeHint().width() if hasattr(self, "terminal_action_widget") else 0
+        top_row_width = SERIAL_INLINE_MIN_WIDTH + action_width + top_spacing
+        return max(self.terminal_widget.minimumWidth(), top_row_width) + right_margins.left() + right_margins.right()
+
+    def update_minimum_window_width(self):
+        rail_width = self.splitter.widget(1).minimumWidth() if hasattr(self, "splitter") else 40
+        splitter_handle_width = self.splitter.handleWidth() * 2 if hasattr(self, "splitter") else 2
+
+        if getattr(self, "left_panel_visible", True):
+            left_width = self.left_widget.minimumWidth()
+            right_width = self.right_widget.minimumWidth()
+            target_width = left_width + rail_width + right_width + splitter_handle_width
+        else:
+            target_width = rail_width + self._collapsed_terminal_min_width() + splitter_handle_width
+
+        self.setMinimumWidth(target_width)
+
+    def _remove_widget_from_layout(self, layout, widget):
+        if layout is None:
+            return False
+
+        for index in reversed(range(layout.count())):
+            item = layout.itemAt(index)
+            if item.widget() is widget:
+                layout.takeAt(index)
+                return True
+
+            child_layout = item.layout()
+            if child_layout is not None and self._remove_widget_from_layout(child_layout, widget):
+                return True
+
+        return False
+
+    def _detach_terminal_action_widget(self):
+        if not hasattr(self, "terminal_action_widget"):
+            return
+
+        for container in (self.serial_group, self.serial_inline_widget, self.right_widget if hasattr(self, "right_widget") else None):
+            if container is not None:
+                self._remove_widget_from_layout(container.layout(), self.terminal_action_widget)
+
+        if hasattr(self, "top_right_btn_layout"):
+            self._remove_widget_from_layout(self.top_right_btn_layout, self.terminal_action_widget)
+
+        self.terminal_action_widget.setParent(None)
 
     def toggle_left_panel(self, checked=False, persist=True, target_visible=None, capture_expanded_sizes=True):
         new_visible = (not self.left_panel_visible) if target_visible is None else target_visible
@@ -2029,13 +2117,17 @@ class SerialTerminal(QMainWindow):
             self.top_right_btn_layout.setContentsMargins(0, 0, 0, 0)
             self.right_layout.setSpacing(8)
             self.right_layout.setContentsMargins(10, 10, 10, 10)
+            self.right_widget.setMinimumWidth(self._collapsed_terminal_min_width())
             self.top_right_btn_layout.insertWidget(0, self.serial_inline_widget, 0, Qt.AlignmentFlag.AlignVCenter)
+            self.top_right_btn_layout.addWidget(self.terminal_action_widget, 0, Qt.AlignmentFlag.AlignVCenter)
             self.splitter.widget(0).hide()
         else:
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
             self.serial_inline_widget.setParent(None)
             self.serial_group.setParent(None)
             self._setup_serial_group_layout(horizontal=False)
+            self.left_widget.setMinimumWidth(self._expanded_left_panel_min_width())
+            self.right_widget.setMinimumWidth(380)
             self.left_widget_layout.insertWidget(0, self.serial_group)
 
             self.splitter.widget(0).show()
@@ -2043,6 +2135,7 @@ class SerialTerminal(QMainWindow):
                 self.splitter.setSizes(self.expanded_splitter_sizes)
 
         self.left_panel_visible = new_visible
+        self.update_minimum_window_width()
         self.toggle_btn.setChecked(not self.left_panel_visible)
         self.terminal_widget.update_scrollbar()
         if self.left_panel_visible:
