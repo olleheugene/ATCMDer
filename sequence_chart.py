@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsLineItem, 
+    QWidget, QVBoxLayout, QHBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsLineItem, 
     QGraphicsTextItem, QGraphicsPathItem, QMainWindow, QFileDialog, QMessageBox, QPushButton
 )
 from PySide6.QtGui import (
@@ -18,19 +18,31 @@ class SequenceChartWindow(QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("Sequence Chart")
         self.resize(700, 800)
-        
-        toolbar = self.addToolBar("Main")
+
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        controls = QWidget()
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(8)
+
         save_btn = QPushButton("Save as PDF")
         save_btn.clicked.connect(self.save_as_pdf)
-        toolbar.addWidget(save_btn)
+        controls_layout.addWidget(save_btn)
         
         self.hex_btn = QPushButton("HEX")
         self.hex_btn.setCheckable(True)
         self.hex_btn.clicked.connect(self.toggle_hex_mode)
-        toolbar.addWidget(self.hex_btn)
+        controls_layout.addWidget(self.hex_btn)
+        controls_layout.addStretch()
         
         self.chart_widget = SequenceChartWidget()
-        self.setCentralWidget(self.chart_widget)
+        layout.addWidget(controls)
+        layout.addWidget(self.chart_widget)
+        self.setCentralWidget(central)
         self.last_save_dir = os.path.expanduser("~")
 
     def add_message(self, direction, message, timestamp=None):
