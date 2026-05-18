@@ -69,7 +69,8 @@ jobs:
             Get-ChildItem -Path dist -Recurse | Format-Table FullName
             throw "atcmder.exe was not found under the dist directory."
           }
-          & $makensisPath /DAPP_VERSION=$version /DAPP_EXE="$($appExe.FullName)" /DOUTPUT_FILE=release\atcmder-windows-$version-setup.exe packaging\windows\installer.nsi
+          $outputFile = Join-Path (Resolve-Path release) "atcmder-windows-$version-setup.exe"
+          & $makensisPath /DAPP_VERSION=$version /DAPP_EXE="$($appExe.FullName)" /DOUTPUT_FILE="$outputFile" packaging\windows\installer.nsi
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
