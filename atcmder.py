@@ -1,5 +1,8 @@
+import os
+import subprocess
 import sys
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QApplication, QMenu
 from serial_terminal import SerialTerminal
 import utils
 
@@ -100,9 +103,41 @@ def load_stylesheet(theme_name):
     return style
 
 
+def get_macos_app_bundle_path():
+    if sys.platform != "darwin" or not getattr(sys, "frozen", False):
+        return None
+
+    executable_dir = os.path.dirname(os.path.abspath(sys.executable))
+    app_path = os.path.abspath(os.path.join(executable_dir, "../.."))
+    return app_path if app_path.endswith(".app") and os.path.isdir(app_path) else None
+
+
+def open_new_instance():
+    app_path = get_macos_app_bundle_path()
+    if app_path:
+        subprocess.Popen(["open", "-n", app_path])
+        return
+
+    subprocess.Popen([sys.executable, *sys.argv])
+
+
+def setup_macos_dock_menu(app):
+    if sys.platform != "darwin" or not hasattr(QMenu, "setAsDockMenu"):
+        return
+
+    dock_menu = QMenu()
+    new_instance_action = QAction("New Window", dock_menu)
+    new_instance_action.triggered.connect(open_new_instance)
+    dock_menu.addAction(new_instance_action)
+    dock_menu.setAsDockMenu()
+
+    app.dock_menu = dock_menu
+
+
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(load_stylesheet("web_dark"))
+    setup_macos_dock_menu(app)
 
     window = SerialTerminal()
     window.show()
