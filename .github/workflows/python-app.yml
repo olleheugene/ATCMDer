@@ -42,7 +42,12 @@ jobs:
       run: |
         mkdir release
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          pwsh -Command "Compress-Archive -Path dist/atcmder.exe -DestinationPath release/atcmder-windows.zip"
+          app_exe="$(find dist -name atcmder.exe -type f | head -n 1)"
+          if [[ -z "${app_exe}" ]]; then
+            find dist -maxdepth 3 -print
+            exit 1
+          fi
+          pwsh -Command "Compress-Archive -Path '${app_exe}' -DestinationPath release/atcmder-windows.zip"
         elif [[ "${{ runner.os }}" == "macOS" ]]; then
           zip -r release/atcmder-macos.zip dist/atcmder.app
         elif [[ "${{ runner.os }}" == "Linux" ]]; then
