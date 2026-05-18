@@ -1179,7 +1179,7 @@ class SerialTerminal(QMainWindow):
 
         text = self.terminal_widget.export_text()
         from datetime import datetime
-        default_name = datetime.now().strftime("terminal_%Y%m%d_%H%M%S.txt")
+        default_name = datetime.now().strftime("atcmder_%Y%m%d_%H%M%S.txt")
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
