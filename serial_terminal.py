@@ -2836,10 +2836,32 @@ class SerialTerminal(QMainWindow):
 
     def open_settings_dialog(self):
         """Open settings dialog with proper callback"""
+        if self.line_ending == "\r":
+            line_ending_setting = "CR"
+        elif self.line_ending == "\n":
+            line_ending_setting = "LF"
+        else:
+            line_ending_setting = "CR+LF"
+
+        current_port = self.serial_port_combo.currentText().strip() or self.selected_port
+        current_baudrate = self.parse_baudrate(self.baudrate_combo.currentText(), self.baudrate)
+        current_settings = {
+            "serial": {
+                "port": current_port,
+                "baudrate": current_baudrate,
+                "flow_control": self.flow_control,
+                "parity": self.parity,
+            },
+            "terminal": {
+                "line_ending": line_ending_setting,
+            },
+        }
+
         dlg = SettingsDialog(
             parent=self,
             settings_path=utils.USER_SETTINGS, 
-            on_settings_changed=self.apply_settings
+            on_settings_changed=self.apply_settings,
+            current_settings=current_settings,
         )
         dlg.exec()
 

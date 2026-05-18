@@ -27,3 +27,5 @@ __pycache__/terminal_widget.cpython-310.pyc
 __pycache__/json_editor.cpython-310.pyc
 __pycache__/yaml_editor.cpython-310.pyc
 __pycache__/settings_dialog.cpython-310.pyc
+__pycache__/sequence_chart.cpython-310.pyc
+__pycache__/serial_terminal.cpython-313.pyc

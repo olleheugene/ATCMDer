@@ -28,6 +28,7 @@ class SerialTab(QWidget):
 
         # Port
         self.port_combo = QComboBox()
+        self.port_combo.setEditable(True)
         self.port_combo.setToolTip("Select the default serial port.")
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh_ports)
@@ -65,19 +66,21 @@ class SerialTab(QWidget):
 
         self.refresh_ports()
 
-    def refresh_ports(self):
-        current_port = self.port_combo.currentText()
+    def refresh_ports(self, preferred_port=None):
+        current_port = preferred_port if preferred_port is not None else self.port_combo.currentText()
         self.port_combo.clear()
         ports = utils.list_serial_ports()
         self.port_combo.addItems(ports)
-        if current_port in ports:
+        if current_port and current_port not in ports:
+            self.port_combo.addItem(current_port)
+        if current_port:
             self.port_combo.setCurrentText(current_port)
 
     def load_settings(self, settings):
         serial_settings = settings.get('serial', {})
-        self.refresh_ports()
         port = serial_settings.get('port', '')
-        if port and self.port_combo.findText(port) != -1:
+        self.refresh_ports(port)
+        if port:
             self.port_combo.setCurrentText(port)
         elif self.port_combo.count() > 0:
             self.port_combo.setCurrentIndex(0)
@@ -505,10 +508,11 @@ class WindowsTab(QWidget):
             print(f"Warning: Could not update command group buttons: {e}")
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None, settings_path=None, on_settings_changed=None):
+    def __init__(self, parent=None, settings_path=None, on_settings_changed=None, current_settings=None):
         super().__init__(parent)
         self.settings_path = settings_path
         self.on_settings_changed = on_settings_changed
+        self.current_settings = current_settings or {}
         self.parent_window = parent  # Store parent reference
         self.setWindowTitle("Settings")
         self.resize(500, 400)
@@ -624,6 +628,12 @@ class SettingsDialog(QDialog):
                     'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
                 }
         
+        for key, value in self.current_settings.items():
+            if isinstance(value, dict) and isinstance(settings.get(key), dict):
+                settings[key].update(value)
+            else:
+                settings[key] = value
+
         # Load settings into tabs
         self.serial_tab.load_settings(settings)
         self.general_tab.load_settings(settings)
