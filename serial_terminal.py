@@ -207,8 +207,9 @@ class SerialTerminal(QMainWindow):
         self.current_command_group = self.load_current_command_group()
         self.predefined_cmd_mappings = {}
         self.load_predefined_cmd_mappings()
-        self.font_size = self.load_font_settings().get("size", 14)
-        self.font_family = self.load_font_settings().get("family", "Monaco")
+        font_settings = self.load_font_settings()
+        self.font_size = font_settings.get("size", utils.DEFAULT_TERMINAL_FONT_SIZE)
+        self.font_family = font_settings.get("name", utils.default_terminal_font_family())
         
         # For HEX mode
         self.hex_modes = [False] * LINEEDIT_MAX_NUMBER 
@@ -1198,7 +1199,7 @@ class SerialTerminal(QMainWindow):
 
     def setup_terminal_font(self):
         """Terminal Font Settings"""
-        fixed_font = QFont(self.load_font_settings().get("name", "Monaco"))
+        fixed_font = QFont(self.load_font_settings().get("name", utils.default_terminal_font_family()))
         fixed_font.setStyleHint(QFont.StyleHint.Monospace)
         fixed_font.setPointSize(self.font_size)
         self.terminal_widget.set_font(fixed_font)
@@ -2695,26 +2696,39 @@ class SerialTerminal(QMainWindow):
     
     def load_font_settings(self):
         """Load font settings from file or return default"""
-        font_info = {}
+        font_info = {
+            "name": utils.default_terminal_font_family(),
+            "family": utils.default_terminal_font_family(),
+            "size": utils.DEFAULT_TERMINAL_FONT_SIZE,
+            "bold": False,
+        }
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                settings = yaml.safe_load(f)
-                
-                # Find font object in the list
+                settings = yaml.safe_load(f) or {}
+
+            if isinstance(settings, dict):
+                saved_font = settings.get("font", {})
+                if isinstance(saved_font, dict):
+                    font_info.update(saved_font)
+            elif isinstance(settings, list):
                 for item in settings:
-                    if isinstance(item, dict) and "font" in item:
-                        font_info = item["font"]
-                        # font_size = font_info.get("size", 14)
+                    if isinstance(item, dict) and isinstance(item.get("font"), dict):
+                        font_info.update(item["font"])
                         break
 
-                # Validate font size range
-                if (font_info.get("size", 14) > 32) or (font_info.get("size", 14) < 6):
-                    font_info.setdefault("size", 14)
-                return font_info
+            if "name" not in font_info and "family" in font_info:
+                font_info["name"] = font_info["family"]
+            if "family" not in font_info and "name" in font_info:
+                font_info["family"] = font_info["name"]
+
+            if font_info.get("name") in {"Monaco", "", None}:
+                font_info["name"] = utils.default_terminal_font_family()
+                font_info["family"] = font_info["name"]
+
+            if font_info.get("size", utils.DEFAULT_TERMINAL_FONT_SIZE) > 32 or font_info.get("size", utils.DEFAULT_TERMINAL_FONT_SIZE) < 6:
+                font_info["size"] = utils.DEFAULT_TERMINAL_FONT_SIZE
+            return font_info
         except Exception:
-            font_info.setdefault("size", 14)
-            font_info.setdefault("family", "Monaco")
-            font_info.setdefault("bold", False)
             return font_info
 
     def save_font_settings(self):
@@ -2738,12 +2752,13 @@ class SerialTerminal(QMainWindow):
             
             if "font" not in settings:
                 settings["font"] = {
-                    "name": "Monaco",
+                    "name": self.font_family or utils.default_terminal_font_family(),
                     "size": self.font_size,
                     "bold": False
                 }
             else:
                 # Update only the size, keep other font properties
+                settings["font"].setdefault("name", self.font_family or utils.default_terminal_font_family())
                 settings["font"]["size"] = self.font_size
             
             # Save back to file
@@ -2754,7 +2769,7 @@ class SerialTerminal(QMainWindow):
 
     def setup_terminal_font(self):
         """Setup terminal font with current font size"""
-        fixed_font = QFont(self.load_font_settings().get("name", "Monaco"))
+        fixed_font = QFont(self.load_font_settings().get("name", utils.default_terminal_font_family()))
         fixed_font.setStyleHint(QFont.StyleHint.Monospace)
         fixed_font.setPointSize(self.font_size)
         self.terminal_widget.set_font(fixed_font)
@@ -2781,7 +2796,7 @@ class SerialTerminal(QMainWindow):
     
     def reset_font_size(self):
         """Reset terminal font size to default"""
-        self.font_size = 11  # Default font size
+        self.font_size = utils.DEFAULT_TERMINAL_FONT_SIZE
         self.setup_terminal_font()
         self.save_font_settings()
         self.update_status_bar(f"Font size reset to: {self.font_size}")
@@ -2996,7 +3011,7 @@ class SerialTerminal(QMainWindow):
         
             # Ensure all required keys exist with defaults
             default_settings = {
-                'font': {'name': 'Monaco', 'size': 14, 'bold': False},
+                'font': {'name': utils.default_terminal_font_family(), 'size': utils.DEFAULT_TERMINAL_FONT_SIZE, 'bold': False},
                 'theme': 'web_dark',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100},
@@ -3017,6 +3032,9 @@ class SerialTerminal(QMainWindow):
                     for subkey, subdefault in default_value.items():
                         if subkey not in settings[key]:
                             settings[key][subkey] = subdefault
+
+            if settings["font"].get("name") in {"Monaco", "", None}:
+                settings["font"]["name"] = utils.default_terminal_font_family()
             
             return settings
             
@@ -3024,7 +3042,7 @@ class SerialTerminal(QMainWindow):
             print(f"Error loading settings: {e}")
             # Return default settings
             return {
-                'font': {'name': 'Monaco', 'size': 14, 'bold': False},
+                'font': {'name': utils.default_terminal_font_family(), 'size': utils.DEFAULT_TERMINAL_FONT_SIZE, 'bold': False},
                 'theme': 'web_dark',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100},

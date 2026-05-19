@@ -577,7 +577,7 @@ class SettingsDialog(QDialog):
         if not self.settings_path or not os.path.exists(self.settings_path):
             # Return default settings
             settings = {
-                'font': {'name': 'Monaco', 'size': 11, 'bold': False},
+                'font': {'name': utils.default_terminal_font_family(), 'size': utils.DEFAULT_TERMINAL_FONT_SIZE, 'bold': False},
                 'theme': 'web_dark',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'terminal': {'line_ending': 'CR+LF'},
@@ -610,7 +610,7 @@ class SettingsDialog(QDialog):
                     settings = data or {}
                 
                 # Ensure defaults
-                settings.setdefault('font', {'name': 'Monaco', 'size': 11, 'bold': False})
+                settings.setdefault('font', {'name': utils.default_terminal_font_family(), 'size': utils.DEFAULT_TERMINAL_FONT_SIZE, 'bold': False})
                 settings.setdefault('theme', 'web_dark')
                 settings.setdefault('output_window', {'show_line_numbers': False, 'show_time': False})
                 settings.setdefault('terminal', {'line_ending': 'CR+LF'})
@@ -620,7 +620,7 @@ class SettingsDialog(QDialog):
             except Exception as e:
                 print(f"Error loading settings: {e}")
                 settings = {
-                    'font': {'name': 'Monaco', 'size': 11, 'bold': False},
+                    'font': {'name': utils.default_terminal_font_family(), 'size': utils.DEFAULT_TERMINAL_FONT_SIZE, 'bold': False},
                     'theme': 'web_dark',
                     'output_window': {'show_line_numbers': False, 'show_time': False},
                     'terminal': {'line_ending': 'CR+LF'},
@@ -633,6 +633,12 @@ class SettingsDialog(QDialog):
                 settings[key].update(value)
             else:
                 settings[key] = value
+
+        font_settings = settings.setdefault('font', {})
+        if font_settings.get('name') in {None, '', 'Monaco'}:
+            font_settings['name'] = utils.default_terminal_font_family()
+        font_settings.setdefault('size', utils.DEFAULT_TERMINAL_FONT_SIZE)
+        font_settings.setdefault('bold', False)
 
         # Load settings into tabs
         self.serial_tab.load_settings(settings)

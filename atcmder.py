@@ -136,6 +136,7 @@ def setup_macos_dock_menu(app):
 
 def main():
     app = QApplication(sys.argv)
+    utils.register_app_font()
     app.setStyleSheet(load_stylesheet("web_dark"))
     setup_macos_dock_menu(app)
 

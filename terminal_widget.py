@@ -3,6 +3,7 @@ from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiA
 from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal
 import re
 import unicodedata
+import utils
 MAX_TERMINAL_LINES = 100000
 TERMINAL_BG = QColor(8, 13, 21)
 TERMINAL_LINE_NUMBER_BG = QColor(13, 20, 32)
@@ -10,13 +11,15 @@ TERMINAL_LINE_NUMBER_SEPARATOR = QColor(42, 52, 68)
 
 class TerminalWidget(QAbstractScrollArea):
     request_paste = Signal()
-    def __init__(self, parent=None, font_family="Monaco", font_size=14):
+    def __init__(self, parent=None, font_family=None, font_size=utils.DEFAULT_TERMINAL_FONT_SIZE):
         super().__init__(parent)
         
         # Set up monospace font with multiple fallbacks
         self.font = QFont()
         # Try common monospace fonts in order
-        monospace_fonts = [font_family, "Monaco", "Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"]
+        default_font_family = utils.default_terminal_font_family()
+        requested_font_family = font_family or default_font_family
+        monospace_fonts = [requested_font_family, default_font_family, "Monaco", "Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"]
         
         for font_name in monospace_fonts:
             test_font = QFont(font_name, font_size)

@@ -19,6 +19,9 @@ DEFAULT_CSS_NAME            = "default"
 LIGHT_CSS_NAME              = "light"
 DARK_CSS_NAME               = "dark"
 RESOURCES_DIR               = "resources"
+DEFAULT_TERMINAL_FONT_FILE  = "FiraD2NerdFont-Regular.ttf"
+DEFAULT_TERMINAL_FONT_FAMILY = "FiraD2 Nerd Font"
+DEFAULT_TERMINAL_FONT_SIZE  = 12
 
 APP_VERSION                 = "3.5.3"
 COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.yaml"
@@ -47,6 +50,8 @@ PREDEFINED_COMMAND_LIST3    = get_user_config_path(COMMANDS_PREDEFINED_FILE3)
 # History file path
 USER_HISTORY = get_user_config_path("atcmder_history.yaml")
 
+_REGISTERED_FONT_FAMILIES = {}
+
 def get_resources(resource_file):
     if hasattr(sys, '_MEIPASS'):
         path = os.path.join(sys._MEIPASS, RESOURCES_DIR, resource_file)
@@ -54,6 +59,29 @@ def get_resources(resource_file):
         path = os.path.join(RESOURCES_DIR, resource_file)
     # print(f"Resource path: {path}") # Uncomment for debugging
     return path
+
+def register_app_font(font_file=DEFAULT_TERMINAL_FONT_FILE):
+    if font_file in _REGISTERED_FONT_FAMILIES:
+        return _REGISTERED_FONT_FAMILIES[font_file]
+
+    try:
+        from PySide6.QtGui import QFontDatabase
+
+        font_path = get_resources(font_file)
+        font_id = QFontDatabase.addApplicationFont(font_path)
+        if font_id >= 0:
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if families:
+                _REGISTERED_FONT_FAMILIES[font_file] = families[0]
+                return families[0]
+    except Exception as e:
+        print(f"Warning: Could not register font {font_file}: {e}")
+
+    _REGISTERED_FONT_FAMILIES[font_file] = DEFAULT_TERMINAL_FONT_FAMILY
+    return DEFAULT_TERMINAL_FONT_FAMILY
+
+def default_terminal_font_family():
+    return register_app_font()
 
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
