@@ -19,6 +19,7 @@ trap cleanup EXIT
 mkdir -p "${OUTPUT_DIR}"
 rm -f "${DMG_PATH}"
 cp -R "${APP_BUNDLE}" "${STAGE_DIR}/ATCMDer.app"
+ln -s /Applications "${STAGE_DIR}/Applications"
 
 for attempt in 1 2 3; do
   if hdiutil create \
