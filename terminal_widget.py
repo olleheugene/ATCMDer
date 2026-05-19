@@ -48,8 +48,13 @@ class TerminalWidget(QAbstractScrollArea):
         # Use consistent character width for monospace font (for Latin characters)
         self.char_width = self.font_metrics.horizontalAdvance('M')
         self.lines = []
+        self.line_texts = []
+        self.line_widths = []
+        self.max_line_width = 0
+        self._max_line_width_dirty = False
         self.scroll_offset = 0
         self.auto_scroll = True 
+        self.ansi_escape = re.compile(r'\x1B\[[0-9;]*m')
 
         # ANSI color cache
         self.ansi_colors = {
@@ -100,6 +105,7 @@ class TerminalWidget(QAbstractScrollArea):
 
         self.search_text = ""
         self.search_matches = []
+        self.search_matches_by_line = {}
         self.search_index = -1
         
         # Line number settings
@@ -127,7 +133,7 @@ class TerminalWidget(QAbstractScrollArea):
         """Return URL at given line/column if present."""
         if line_idx < 0 or line_idx >= len(self.lines):
             return None
-        text = self._line_text(self.lines[line_idx])
+        text = self._line_text(self.lines[line_idx], line_idx)
         for match in self.url_pattern.finditer(text):
             start, end = match.span()
             if start <= col <= end:
@@ -139,6 +145,83 @@ class TerminalWidget(QAbstractScrollArea):
         self.cursor_visible = not self.cursor_visible
         self.viewport().update()
 
+    def _measure_text_width(self, text):
+        if not text:
+            return 0
+        if text.isascii():
+            return len(text) * self.char_width
+
+        width = 0
+        for char in text:
+            char_width = self.font_metrics.horizontalAdvance(char)
+            if unicodedata.east_asian_width(char) not in ('W', 'F', 'A') and abs(char_width - self.char_width) < 2:
+                char_width = self.char_width
+            width += char_width
+        return width
+
+    def _sync_line_cache_lengths(self):
+        while len(self.line_texts) < len(self.lines):
+            self.line_texts.append("")
+            self.line_widths.append(0)
+        if len(self.line_texts) > len(self.lines):
+            del self.line_texts[len(self.lines):]
+            del self.line_widths[len(self.lines):]
+            self._max_line_width_dirty = True
+
+    def _rebuild_line_cache(self, start=0, end=None):
+        self._sync_line_cache_lengths()
+        if end is None:
+            end = len(self.lines)
+        start = max(0, start)
+        end = min(end, len(self.lines))
+
+        for line_idx in range(start, end):
+            text = ''.join(part for part, _ in self.lines[line_idx])
+            width = self._measure_text_width(text)
+            old_width = self.line_widths[line_idx]
+            self.line_texts[line_idx] = text
+            self.line_widths[line_idx] = width
+            if width >= self.max_line_width:
+                self.max_line_width = width
+            elif old_width >= self.max_line_width:
+                self._max_line_width_dirty = True
+
+    def _current_max_line_width(self):
+        if self._max_line_width_dirty:
+            self.max_line_width = max(self.line_widths, default=0)
+            self._max_line_width_dirty = False
+        return self.max_line_width
+
+    def _rebuild_search_match_index(self):
+        self.search_matches_by_line = {}
+        for idx, match in enumerate(self.search_matches):
+            self.search_matches_by_line.setdefault(match[0], []).append((idx, match[1], match[2]))
+
+    def _trim_cached_lines(self, overflow):
+        if overflow <= 0:
+            return
+
+        del self.lines[:overflow]
+        del self.line_texts[:overflow]
+        del self.line_widths[:overflow]
+        self._max_line_width_dirty = True
+
+        if self.scroll_offset > 0:
+            self.scroll_offset = max(0, self.scroll_offset - overflow)
+
+        if self.selection_start and self.selection_end:
+            self.selection_start = (max(0, self.selection_start[0] - overflow), self.selection_start[1])
+            self.selection_end = (max(0, self.selection_end[0] - overflow), self.selection_end[1])
+
+        if self.search_matches:
+            self.search_matches = [
+                (line - overflow, start, end)
+                for line, start, end in self.search_matches
+                if line >= overflow
+            ]
+            self._rebuild_search_match_index()
+            self.search_index = min(self.search_index, len(self.search_matches) - 1) if self.search_matches else -1
+
     def set_cursor(self, line, col):
         """Set cursor position"""
         self.cursor_line = line
@@ -149,7 +232,7 @@ class TerminalWidget(QAbstractScrollArea):
         """Set cursor to the end of the last line"""
         if self.lines:
             self.cursor_line = len(self.lines) - 1
-            self.cursor_col = len(self._line_text(self.lines[-1]))
+            self.cursor_col = len(self._line_text(self.lines[-1], self.cursor_line))
         else:
             self.cursor_line = 0
             self.cursor_col = 0
@@ -166,7 +249,8 @@ class TerminalWidget(QAbstractScrollArea):
 
         # Record the current line count (before adding text)
         lines_before = len(self.lines)
-        last_line_length_before = len(self._line_text(self.lines[-1])) if self.lines else 0
+        changed_start = max(0, lines_before - 1)
+        last_line_length_before = len(self._line_text(self.lines[-1], lines_before - 1)) if self.lines else 0
 
         # Handle ANSI cursor home (ESC[H])
         cursor_home_pattern = re.compile(r'\x1B\[H')
@@ -215,12 +299,12 @@ class TerminalWidget(QAbstractScrollArea):
                 else:
                     merged.append((part, color))
             self.lines[-1].extend(merged)
+
+        self._rebuild_line_cache(changed_start)
         
         if len(self.lines) > MAX_TERMINAL_LINES:
             overflow = len(self.lines) - MAX_TERMINAL_LINES
-            del self.lines[:overflow]
-            if self.scroll_offset > 0:
-                self.scroll_offset = max(0, self.scroll_offset - overflow)
+            self._trim_cached_lines(overflow)
         
         # Update line number width if line numbers are enabled
         if self.show_line_numbers:
@@ -255,7 +339,7 @@ class TerminalWidget(QAbstractScrollArea):
             # If text was added to the existing last line (without a line break), no offset adjustment is needed
             # (This is special handling for data coming in one line at a time)
             if new_lines_added == 0 and len(self.lines) > 0:
-                last_line_length_after = len(self._line_text(self.lines[-1]))
+                last_line_length_after = len(self._line_text(self.lines[-1], len(self.lines) - 1))
                 if last_line_length_after > last_line_length_before:
                     # If the length of the last line has increased but is not actually visible on the screen
                     # This is to maintain the scroll position even if text is added to the same line
@@ -288,10 +372,9 @@ class TerminalWidget(QAbstractScrollArea):
     def parse_ansi_text(self, text):
         """Parse ANSI color sequences (color only)"""
         result = []
-        ansi_escape = re.compile(r'\x1B\[[0-9;]*m')
         current_color = self.current_color
         pos = 0
-        for match in ansi_escape.finditer(text):
+        for match in self.ansi_escape.finditer(text):
             if pos < match.start():
                 result.append((text[pos:match.start()], current_color))
             code_str = match.group()[2:-1]
@@ -371,7 +454,7 @@ class TerminalWidget(QAbstractScrollArea):
         y = 5
         for line_idx in range(start_line, end_line):
             line_parts = self.lines[line_idx]
-            line_text_full = self._line_text(line_parts)
+            line_text_full = self._line_text(line_parts, line_idx)
             line_url_matches = list(self.url_pattern.finditer(line_text_full)) if line_text_full else []
             line_base_x = text_start_x + 5 - h_scroll_offset
             x = line_base_x
@@ -407,52 +490,24 @@ class TerminalWidget(QAbstractScrollArea):
             
             # Search highlight
             if self.search_text:
-                for idx, match in enumerate(self.search_matches):
-                    if match[0] == line_idx:
-                        start_px = x + match[1] * self.char_width
-                        end_px = x + match[2] * self.char_width
-                        # Only draw if within visible text area
-                        if end_px > text_start_x and start_px < effective_width:
-                            start_px = max(start_px, text_start_x)
-                            # Use different color for current selected search result
-                            if idx == self.search_index:
-                                painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 120, 0, 180))  # Dark orange
-                            else:
-                                painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 200, 50, 120))  # Light yellow
+                for idx, match_start, match_end in self.search_matches_by_line.get(line_idx, []):
+                    start_px = x + match_start * self.char_width
+                    end_px = x + match_end * self.char_width
+                    if end_px > text_start_x and start_px < effective_width:
+                        start_px = max(start_px, text_start_x)
+                        if idx == self.search_index:
+                            painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 120, 0, 180))
+                        else:
+                            painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 200, 50, 120))
 
             for text_part, color in line_parts:
                 if text_part and x < effective_width - 5:
-                    # Defensive: ensure color is valid for setPen (fallback to default color)
                     pen_color = color if color is not None else self.default_color
                     painter.setPen(pen_color)
-                    
-                    # Draw text character by character, calculating actual width for each
-                    current_x_for_part = x
-                    for char in text_part:
-                        # Get the actual width of the character
-                        char_display_width = self.font_metrics.horizontalAdvance(char)
-                        
-                        # Check if the character is a CJK character (typically double-width)
-                        # This is a heuristic; a more robust solution might involve font-specific metrics
-                        # or a more comprehensive CJK character range check.
-                        # For now, we'll assume CJK characters are wider than 'M' and adjust.
-                        if unicodedata.east_asian_width(char) in ('W', 'F', 'A'): # Wide, Fullwidth, Ambiguous
-                            # If the font is truly monospace for CJK, char_display_width will be ~2*self.char_width
-                            # If not, we still use its actual width.
-                            pass # Use actual width
-                        else:
-                            # For non-CJK, use the assumed monospace width for consistency if it's close
-                            # This helps align ASCII characters better in a mixed environment
-                            if abs(char_display_width - self.char_width) < 2: # Small tolerance
-                                char_display_width = self.char_width
-
-                        # Only draw if text is in visible area
-                        if current_x_for_part >= text_start_x and current_x_for_part < effective_width - 5:
-                            painter.drawText(current_x_for_part, y_line, char)
-                        
-                        current_x_for_part += char_display_width
-
-                    x = current_x_for_part # Update x for the next text_part
+                    part_width = self._measure_text_width(text_part)
+                    if x + part_width > text_start_x and x < effective_width - 5:
+                        painter.drawText(x, y_line, text_part)
+                    x += part_width
 
             # Draw URL underline after text so it stays visible
             if line_url_matches:
@@ -474,7 +529,7 @@ class TerminalWidget(QAbstractScrollArea):
                 self.hasFocus()):
                 # Calculate cursor position based on actual text rendering
                 if line_idx < len(self.lines):
-                    line_text = self._line_text(self.lines[line_idx])
+                    line_text = self._line_text(self.lines[line_idx], line_idx)
                     
                     calculated_cursor_x_offset = 0
                     for i, char in enumerate(line_text):
@@ -506,7 +561,9 @@ class TerminalWidget(QAbstractScrollArea):
         
         painter.end()
 
-    def _line_text(self, line_parts):
+    def _line_text(self, line_parts, line_idx=None):
+        if line_idx is not None and 0 <= line_idx < len(self.line_texts):
+            return self.line_texts[line_idx]
         return ''.join(part for part, _ in line_parts)
 
     def _line_length(self, line_parts):
@@ -600,21 +657,7 @@ class TerminalWidget(QAbstractScrollArea):
         self.verticalScrollBar().blockSignals(False)
         
         # Horizontal Scrollbar 업데이트
-        max_line_width = 0
-        if self.lines:
-            for line_parts in self.lines:
-                line_text = self._line_text(line_parts)
-                
-                # Calculate actual pixel width of the line
-                line_width = 0
-                for char in line_text:
-                    char_display_width = self.font_metrics.horizontalAdvance(char)
-                    if unicodedata.east_asian_width(char) not in ('W', 'F', 'A') and abs(char_display_width - self.char_width) < 2:
-                        char_display_width = self.char_width
-                    line_width += char_display_width
-
-                max_line_width = max(max_line_width, line_width)
-        content_text_width = max_line_width + (self.char_width * 2) + 10
+        content_text_width = self._current_max_line_width() + (self.char_width * 2) + 10
         
         self.horizontalScrollBar().blockSignals(True)
         if content_text_width > text_area_width:
@@ -818,7 +861,7 @@ class TerminalWidget(QAbstractScrollArea):
             
             # Get the text of the clicked line
             if line < len(self.lines):
-                text = self._line_text(self.lines[line])
+                text = self._line_text(self.lines[line], line)
                 
                 # Find word boundaries
                 start_col, end_col = self._find_word_boundaries(text, col)
@@ -866,7 +909,7 @@ class TerminalWidget(QAbstractScrollArea):
         if (self.show_line_numbers or self.show_timestamps) and pos.x() < text_start_x:
             return (line, 0)
         
-        text = self._line_text(self.lines[line]) if line < len(self.lines) else ""
+        text = self._line_text(self.lines[line], line) if line < len(self.lines) else ""
         
         if not text:
             return (line, 0)
@@ -926,7 +969,7 @@ class TerminalWidget(QAbstractScrollArea):
         for i in range(sel_start[0], sel_end[0] + 1):
             if i >= len(self.lines):
                 break
-            line = self._line_text(self.lines[i])
+            line = self._line_text(self.lines[i], i)
             if i == sel_start[0] and i == sel_end[0]:
                 # Selection is within one line
                 lines.append(line[sel_start[1]:sel_end[1]])
@@ -949,7 +992,7 @@ class TerminalWidget(QAbstractScrollArea):
             return
 
         last_line_index = len(self.lines) - 1
-        last_col = len(self._line_text(self.lines[last_line_index]))
+        last_col = len(self._line_text(self.lines[last_line_index], last_line_index))
         self.selection_start = (0, 0)
         self.selection_end = (last_line_index, last_col)
         self.is_selecting = False
@@ -958,6 +1001,10 @@ class TerminalWidget(QAbstractScrollArea):
     def clear(self):
         """Clear the terminal"""
         self.lines = []
+        self.line_texts = []
+        self.line_widths = []
+        self.max_line_width = 0
+        self._max_line_width_dirty = False
         self.cursor_line = 0
         self.cursor_col = 0
         self.selection_start = None
@@ -976,6 +1023,9 @@ class TerminalWidget(QAbstractScrollArea):
         self.font_metrics = QFontMetrics(self.font)
         self.line_height = self.font_metrics.height()
         self.char_width = self.font_metrics.horizontalAdvance('M')
+        self.max_line_width = 0
+        self._rebuild_line_cache(0)
+        self._max_line_width_dirty = True
         
         # Update line number width if line numbers are enabled
         if self.show_line_numbers:
@@ -996,6 +1046,7 @@ class TerminalWidget(QAbstractScrollArea):
         """Start text search"""
         self.search_text = text
         self.search_matches = []
+        self.search_matches_by_line = {}
         self.search_index = -1
         
         if not text:
@@ -1004,7 +1055,7 @@ class TerminalWidget(QAbstractScrollArea):
         
         # Search through all lines
         for line_idx, line_parts in enumerate(self.lines):
-            line_text = self._line_text(line_parts)
+            line_text = self._line_text(line_parts, line_idx)
             search_text = text if case_sensitive else text.lower()
             line_search_text = line_text if case_sensitive else line_text.lower()
             
@@ -1018,6 +1069,7 @@ class TerminalWidget(QAbstractScrollArea):
         
         if self.search_matches:
             self.search_index = 0
+        self._rebuild_search_match_index()
         
         self.viewport().update()
 
@@ -1025,6 +1077,7 @@ class TerminalWidget(QAbstractScrollArea):
         """Clear search highlights"""
         self.search_text = ""
         self.search_matches = []
+        self.search_matches_by_line = {}
         self.search_index = -1
         self.viewport().update()
 
@@ -1049,6 +1102,9 @@ class TerminalWidget(QAbstractScrollArea):
             # Current line is empty, remove previous line if exists
             if len(self.lines) > 1:
                 self.lines.pop()
+                self.line_texts.pop()
+                self.line_widths.pop()
+                self._max_line_width_dirty = True
             self._schedule_update()
             return
         
@@ -1068,6 +1124,11 @@ class TerminalWidget(QAbstractScrollArea):
         if not self.lines[-1] and len(self.lines) > 1:
             # Check if this is truly an empty line or just no text parts
             self.lines.pop()
+            self.line_texts.pop()
+            self.line_widths.pop()
+            self._max_line_width_dirty = True
+        elif self.lines:
+            self._rebuild_line_cache(len(self.lines) - 1, len(self.lines))
             
         self._schedule_update()
 
@@ -1091,12 +1152,14 @@ class TerminalWidget(QAbstractScrollArea):
             else:
                 # Add as new part
                 self.lines[-1].append((part, color))
+        self._rebuild_line_cache(len(self.lines) - 1, len(self.lines))
         
         self._schedule_update()
 
     def export_text(self):
         """Return terminal contents as a plain-text string."""
-        return '\n'.join(self._line_text(line_parts) for line_parts in self.lines)
+        self._sync_line_cache_lengths()
+        return '\n'.join(self.line_texts)
 
     def on_port_changed(self, port):
         self.selected_port = port
