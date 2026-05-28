@@ -23,7 +23,7 @@ DEFAULT_TERMINAL_FONT_FILE  = "FiraD2NerdFont-Regular.ttf"
 DEFAULT_TERMINAL_FONT_FAMILY = "FiraD2 Nerd Font"
 DEFAULT_TERMINAL_FONT_SIZE  = 12
 
-APP_VERSION                 = "3.5.5"
+APP_VERSION                 = "3.5.6"
 COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.yaml"
 COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.yaml"
 COMMANDS_PREDEFINED_FILE3   = "atcmder_predefined_cmd_3.yaml"
