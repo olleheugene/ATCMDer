@@ -2669,6 +2669,10 @@ class SerialTerminal(QMainWindow):
     def show_sequence_chart(self):
         if self.sequence_chart_window is None:
             self.sequence_chart_window = SequenceChartWindow(self)
+
+        if self.sequence_chart_window.isVisible():
+            self.sequence_chart_window.hide()
+            return
         
         self.sequence_chart_window.resize(self.sequence_chart_window.width(), self.height())
         self.sequence_chart_window.show()
