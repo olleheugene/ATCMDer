@@ -59,6 +59,7 @@ class SequenceChartWindow(QMainWindow):
             pass
 
     def toggle_hex_mode(self, checked):
+        self.hex_btn.setText("TEXT" if checked else "HEX")
         self.chart_widget.set_hex_mode(checked)
 
     def save_as_pdf(self):
