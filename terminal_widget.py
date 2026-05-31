@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices, QPainterPath
-from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal, QPoint
 import re
 import unicodedata
 import utils
@@ -45,7 +45,8 @@ class TerminalWidget(QAbstractScrollArea):
         self.font.setFixedPitch(True)
         self.font.setKerning(False)  # Disable kerning for consistent spacing
         self.font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0)  # Remove extra spacing
-        
+        self.font.setStyleStrategy(QFont.StyleStrategy.PreferNoShaping)
+
         self.font_metrics = QFontMetrics(self.font)
         self.line_height = self.font_metrics.height()
         # Use consistent character width for monospace font (for Latin characters)
@@ -128,6 +129,11 @@ class TerminalWidget(QAbstractScrollArea):
         self.hovered_url = None
         self._mouse_press_pos = None
         self._mouse_press_linecol = None
+        self._last_mouse_pos = QPoint()
+        self._selection_scroll_margin = 28
+        self._selection_scroll_timer = QTimer(self)
+        self._selection_scroll_timer.setInterval(45)
+        self._selection_scroll_timer.timeout.connect(self._auto_scroll_selection)
         self.viewport().setCursor(Qt.IBeamCursor)
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
@@ -148,19 +154,48 @@ class TerminalWidget(QAbstractScrollArea):
         self.cursor_visible = not self.cursor_visible
         self.viewport().update()
 
-    def _measure_text_width(self, text):
-        if not text:
+    def _char_display_width(self, char):
+        if not char:
             return 0
-        if text.isascii():
-            return len(text) * self.char_width
 
+        if unicodedata.combining(char):
+            return 0
+
+        east_asian_width = unicodedata.east_asian_width(char)
+        if east_asian_width in ('W', 'F'):
+            return self.char_width * 2
+
+        if char == '\t':
+            return self.char_width * 4
+
+        return self.char_width
+
+    def _measure_text_width(self, text):
+        return sum(self._char_display_width(char) for char in text) if text else 0
+
+    def _get_text_width_up_to_col(self, line_parts, max_col):
+        """Calculate the pixel width up to a specific column in a line."""
         width = 0
-        for char in text:
-            char_width = self.font_metrics.horizontalAdvance(char)
-            if unicodedata.east_asian_width(char) not in ('W', 'F', 'A') and abs(char_width - self.char_width) < 2:
-                char_width = self.char_width
-            width += char_width
+        col = 0
+        for text_part, _ in line_parts:
+            if col >= max_col:
+                break
+            for char in text_part:
+                if col >= max_col:
+                    break
+                width += self._char_display_width(char)
+                col += 1
         return width
+
+    def _draw_terminal_text(self, painter, x, baseline_y, text):
+        for char in text:
+            char_width = self._char_display_width(char)
+            if char == '\t':
+                x += char_width
+                continue
+            painter.drawText(int(x), int(baseline_y), char)
+            x += char_width
+        return x
 
     def _sync_line_cache_lengths(self):
         while len(self.line_texts) < len(self.lines):
@@ -401,8 +436,11 @@ class TerminalWidget(QAbstractScrollArea):
         painter = QPainter(self.viewport())
         painter.setFont(self.font)
         # Set text rendering hints for better alignment
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Disable TextAntialiasing and Antialiasing to prevent text overlapping
+        # especially with ANSI color codes
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, False)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
         viewport_rect = self.viewport().rect()
         rounded_rect = QRectF(viewport_rect).adjusted(0.5, 0.5, -0.5, -0.5)
         rounded_path = QPainterPath()
@@ -483,19 +521,23 @@ class TerminalWidget(QAbstractScrollArea):
                 if sel_start[0] <= line_idx <= sel_end[0]:
                     sel_col_start = sel_start[1] if line_idx == sel_start[0] else 0
                     sel_col_end = sel_end[1] if line_idx == sel_end[0] else self._line_length(line_parts)
-                    x1 = x + sel_col_start * self.char_width
-                    x2 = x + sel_col_end * self.char_width
-                    x2 = min(x2, effective_width - 5)
-                    # Only draw if within visible text area
+
+                    # Calculate actual pixel positions based on character widths
+                    x1 = line_base_x + self._get_text_width_up_to_col(line_parts, sel_col_start)
+                    x2 = line_base_x + self._get_text_width_up_to_col(line_parts, sel_col_end)
+
+                    # Only draw if within visible text area, allow full width to the edge
                     if x2 > text_start_x and x1 < effective_width:
-                        x1 = max(x1, text_start_x)
-                        painter.fillRect(x1, y, x2 - x1, self.line_height, QColor(60, 120, 200, 120))
-            
+                        x1 = max(int(x1), text_start_x)
+                        x2 = min(int(x2), effective_width)
+                        if x2 > x1:
+                            painter.fillRect(x1, y, x2 - x1, self.line_height, QColor(60, 120, 200, 120))
+
             # Search highlight
             if self.search_text:
                 for idx, match_start, match_end in self.search_matches_by_line.get(line_idx, []):
-                    start_px = x + match_start * self.char_width
-                    end_px = x + match_end * self.char_width
+                    start_px = line_base_x + self._get_text_width_up_to_col(line_parts, match_start)
+                    end_px = line_base_x + self._get_text_width_up_to_col(line_parts, match_end)
                     if end_px > text_start_x and start_px < effective_width:
                         start_px = max(start_px, text_start_x)
                         if idx == self.search_index:
@@ -504,13 +546,14 @@ class TerminalWidget(QAbstractScrollArea):
                             painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 200, 50, 120))
 
             for text_part, color in line_parts:
-                if text_part and x < effective_width - 5:
+                if text_part and x < effective_width:
                     pen_color = color if color is not None else self.default_color
                     painter.setPen(pen_color)
                     part_width = self._measure_text_width(text_part)
-                    if x + part_width > text_start_x and x < effective_width - 5:
-                        painter.drawText(x, y_line, text_part)
-                    x += part_width
+                    if x + part_width > text_start_x and x < effective_width:
+                        x = self._draw_terminal_text(painter, x, y_line, text_part)
+                    else:
+                        x += part_width
 
             # Draw URL underline after text so it stays visible
             if line_url_matches:
@@ -519,30 +562,23 @@ class TerminalWidget(QAbstractScrollArea):
                 underline_y = min(y + self.line_height - 2, effective_height - 1)
                 for match in line_url_matches:
                     start_col, end_col = match.span()
-                    start_px = line_base_x + start_col * self.char_width
-                    end_px = line_base_x + end_col * self.char_width
-                    if end_px > text_start_x and start_px < effective_width - 5:
+                    start_px = line_base_x + self._get_text_width_up_to_col(line_parts, start_col)
+                    end_px = line_base_x + self._get_text_width_up_to_col(line_parts, end_col)
+                    if end_px > text_start_x and start_px < effective_width:
                         start_px = max(start_px, text_start_x)
-                        end_px = min(end_px, effective_width - 5)
-                        painter.drawLine(start_px, underline_y, end_px, underline_y)
+                        end_px = min(end_px, effective_width)
+                        painter.drawLine(int(start_px), underline_y, int(end_px), underline_y)
                 painter.restore()
             
             if (self.cursor_visible and 
                 line_idx == self.cursor_line and 
                 self.hasFocus()):
                 # Calculate cursor position based on actual text rendering
+                line_text = ""
                 if line_idx < len(self.lines):
                     line_text = self._line_text(self.lines[line_idx], line_idx)
-                    
-                    calculated_cursor_x_offset = 0
-                    for i, char in enumerate(line_text):
-                        if i >= self.cursor_col:
-                            break
-                        char_display_width = self.font_metrics.horizontalAdvance(char)
-                        if unicodedata.east_asian_width(char) not in ('W', 'F', 'A') and abs(char_display_width - self.char_width) < 2:
-                            char_display_width = self.char_width
-                        calculated_cursor_x_offset += char_display_width
 
+                    calculated_cursor_x_offset = self._get_text_width_up_to_col(self.lines[line_idx], self.cursor_col)
                     cursor_x = text_start_x + 5 - h_scroll_offset + calculated_cursor_x_offset
 
                 else:
@@ -550,8 +586,8 @@ class TerminalWidget(QAbstractScrollArea):
 
                 # Ensure cursor is within bounds of the line's actual rendered width
                 if self.cursor_col == len(line_text):
-                    cursor_x = text_start_x + 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(line_text)
-                    
+                    cursor_x = text_start_x + 5 - h_scroll_offset + self._measure_text_width(line_text)
+
                 if cursor_x >= text_start_x and cursor_x < effective_width - 5:
                     painter.setPen(QColor(200, 255, 200))
                     painter.drawRect(cursor_x, y, 2, self.line_height)
@@ -793,6 +829,56 @@ class TerminalWidget(QAbstractScrollArea):
         
         self.viewport().update()
 
+    def _selection_scroll_direction(self):
+        if not self.is_selecting or not self.lines:
+            return 0
+
+        effective_height = self.viewport().height()
+        if self.horizontalScrollBar().isVisible():
+            effective_height -= self.horizontalScrollBar().height()
+
+        y = self._last_mouse_pos.y()
+        if y < self._selection_scroll_margin:
+            return 1
+        if y > effective_height - self._selection_scroll_margin:
+            return -1
+        return 0
+
+    def _update_selection_scroll_timer(self):
+        if self._selection_scroll_direction() != 0:
+            if not self._selection_scroll_timer.isActive():
+                self._selection_scroll_timer.start()
+        elif self._selection_scroll_timer.isActive():
+            self._selection_scroll_timer.stop()
+
+    def _auto_scroll_selection(self):
+        direction = self._selection_scroll_direction()
+        if direction == 0:
+            self._selection_scroll_timer.stop()
+            return
+
+        effective_height = self.viewport().height()
+        if self.horizontalScrollBar().isVisible():
+            effective_height -= self.horizontalScrollBar().height()
+
+        visible_lines = max(1, effective_height // self.line_height)
+        max_scroll = max(0, len(self.lines) - visible_lines)
+        old_offset = self.scroll_offset
+
+        if direction > 0:
+            self.auto_scroll = False
+            self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
+        else:
+            self.auto_scroll = False
+            self.scroll_offset = max(0, self.scroll_offset - 1)
+
+        if self.scroll_offset == old_offset:
+            return
+
+        self.selection_end = self._pos_to_linecol(self._last_mouse_pos)
+        self.update_scrollbar()
+        self.viewport().update()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             line, col = self._pos_to_linecol(event.pos())
@@ -801,20 +887,24 @@ class TerminalWidget(QAbstractScrollArea):
             self.is_selecting = True
             self._mouse_press_pos = event.pos()
             self._mouse_press_linecol = (line, col)
+            self._last_mouse_pos = event.pos()
             self.hovered_url = None
             self.viewport().setCursor(Qt.IBeamCursor)
             self.viewport().update()
 
     def mouseMoveEvent(self, event):
+        self._last_mouse_pos = event.pos()
         if self.is_selecting:
             line, col = self._pos_to_linecol(event.pos())
             self.selection_end = (line, col)
+            self._update_selection_scroll_timer()
             self.viewport().update()
         self._update_hover_state(event.pos())
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.is_selecting = False
+            self._selection_scroll_timer.stop()
             click_url = None
             if self._mouse_press_pos is not None:
                 distance = (event.pos() - self._mouse_press_pos).manhattanLength()
@@ -911,17 +1001,33 @@ class TerminalWidget(QAbstractScrollArea):
         # If click is in the line number or timestamp area, set column to 0
         if (self.show_line_numbers or self.show_timestamps) and pos.x() < text_start_x:
             return (line, 0)
-        
-        text = self._line_text(self.lines[line], line) if line < len(self.lines) else ""
-        
+
+        if line >= len(self.lines):
+            return (line, 0)
+
+        line_parts = self.lines[line]
+        text = self._line_text(line_parts, line)
+
         if not text:
             return (line, 0)
-        
-        # Simple character position calculation for monospace font
-        # Convert x position to character column using fixed char width
-        col = int((x + self.char_width * 0.5) / self.char_width)
-        col = max(0, min(col, len(text)))
-        
+
+        # More accurate character position calculation using actual character widths
+        # Iterate through line parts to find which character was clicked
+        current_x = 0
+        col = 0
+
+        for text_part, _ in line_parts:
+            for char in text_part:
+                char_width = self._char_display_width(char)
+
+                # Check if click is within this character's bounds
+                if x < current_x + char_width * 0.5:
+                    return (line, col)
+
+                current_x += char_width
+                col += 1
+
+        # If x position is past the end of the line, return the last column
         return (line, col)
 
     def _update_hover_state(self, pos):
@@ -1023,6 +1129,9 @@ class TerminalWidget(QAbstractScrollArea):
     def set_font(self, font):
         """Set the terminal font"""
         self.font = font
+        self.font.setKerning(False)
+        self.font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0)
+        self.font.setStyleStrategy(QFont.StyleStrategy.PreferNoShaping)
         self.font_metrics = QFontMetrics(self.font)
         self.line_height = self.font_metrics.height()
         self.char_width = self.font_metrics.horizontalAdvance('M')
