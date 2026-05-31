@@ -7,7 +7,7 @@ import re
 import subprocess
 from datetime import datetime
 from PySide6.QtWidgets import (
-    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog
+    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog, QProgressBar
 )
 from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression, QSize
@@ -131,6 +131,9 @@ class SerialTerminal(QMainWindow):
     sequential_complete_signal = Signal(bool, str)
     reconnect_signal = Signal()
     log_data_signal = Signal(str, str, str)
+    file_send_status_signal = Signal(str)
+    file_send_progress_signal = Signal(int)
+    file_send_complete_signal = Signal(bool, str)
 
     @staticmethod
     def clear_layout(layout):
@@ -186,6 +189,8 @@ class SerialTerminal(QMainWindow):
         self.current_input_buffer = ""
         self.line_ending = "\r\n"  # Default to CR+LF
         self._loading_command_list = False
+        self.file_send_thread = None
+        self.file_send_active = False
 
         self._status_timer = QTimer()
         self._status_timer.setSingleShot(True)
@@ -222,6 +227,14 @@ class SerialTerminal(QMainWindow):
         self.flow_control = 'None'
         self.parity = 'None'
         self.status = self.statusBar()
+        self.status_progress = QProgressBar()
+        self.status_progress.setFixedWidth(160)
+        self.status_progress.setRange(0, 100)
+        self.status_progress.setValue(0)
+        self.status_progress.setTextVisible(True)
+        self.status_progress.setFormat("%p%")
+        self.status_progress.setVisible(False)
+        self.status.addPermanentWidget(self.status_progress)
         self.update_status_bar("Disconnected")
         
         # Load command group count
@@ -458,6 +471,7 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.setMinimumWidth(360)
         self.terminal_widget.installEventFilter(self)
         self.terminal_widget.request_paste.connect(self.handle_paste)
+        self.terminal_widget.files_dropped.connect(self.handle_terminal_files_dropped)
         self.clear_btn = QPushButton()
         self.clear_btn.setObjectName("toolbarIconButton")
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
@@ -572,6 +586,9 @@ class SerialTerminal(QMainWindow):
         self.update_minimum_window_width()
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
+        self.file_send_status_signal.connect(self.update_status_bar)
+        self.file_send_progress_signal.connect(self.update_file_send_progress)
+        self.file_send_complete_signal.connect(self.on_file_send_complete)
         
         self.sequence_chart_window = None
         self.log_data_signal.connect(self.on_log_data)
@@ -1040,6 +1057,180 @@ class SerialTerminal(QMainWindow):
                 self.current_input_buffer += line.rstrip('\r\n')
                 self.terminal_widget.append_text(line)
             self.show_current_input()
+
+    def handle_terminal_files_dropped(self, file_paths):
+        """Send dropped file contents as HEX/binary bytes after confirmation."""
+        if not file_paths:
+            return
+
+        if self.file_send_active:
+            self.update_status_bar("File send already in progress")
+            return
+
+        if not (self.serial and self.serial.is_open):
+            self.update_status_bar("Error: Not connected to serial port")
+            QMessageBox.warning(self, "File Drop", "Serial port is not connected.")
+            return
+
+        files = []
+        skipped = []
+        total_size = 0
+        for path in file_paths:
+            if not os.path.isfile(path):
+                skipped.append(path)
+                continue
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                skipped.append(path)
+                continue
+            files.append((path, size))
+            total_size += size
+
+        if not files:
+            self.update_status_bar("No readable file to send")
+            return
+
+        file_lines = [
+            f"- {os.path.basename(path)} ({self.format_byte_count(size)})"
+            for path, size in files[:8]
+        ]
+        if len(files) > 8:
+            file_lines.append(f"- ... {len(files) - 8} more")
+
+        message = (
+            "파일 내용을 붙여넣기 하시겠어요?\n\n"
+            + "\n".join(file_lines)
+            + f"\n\nTotal: {self.format_byte_count(total_size)}"
+        )
+        if skipped:
+            message += f"\nSkipped unreadable items: {len(skipped)}"
+
+        confirm_box = QMessageBox(self)
+        confirm_box.setWindowTitle("File Drop")
+        confirm_box.setIcon(QMessageBox.Icon.Question)
+        confirm_box.setText(message)
+        confirm_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        confirm_box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        confirm_box.button(QMessageBox.StandardButton.Ok).setText("확인")
+        confirm_box.button(QMessageBox.StandardButton.Cancel).setText("취소")
+        if confirm_box.exec() != QMessageBox.StandardButton.Ok:
+            return
+
+        self.start_file_hex_send(files, total_size)
+
+    @staticmethod
+    def format_byte_count(size):
+        units = ("B", "KB", "MB", "GB")
+        value = float(size)
+        for unit in units:
+            if value < 1024 or unit == units[-1]:
+                if unit == "B":
+                    return f"{int(value)} {unit}"
+                return f"{value:.1f} {unit}"
+            value /= 1024
+
+    @staticmethod
+    def format_hex_preview(data, limit=32):
+        if not data:
+            return ""
+        preview = " ".join(f"{byte:02X}" for byte in data[:limit])
+        if len(data) > limit:
+            preview += " ..."
+        return preview
+
+    def start_file_hex_send(self, files, total_size):
+        self.file_send_active = True
+        self.update_file_send_progress(0)
+        self.file_send_status_signal.emit(f"Sending file as HEX: {self.format_byte_count(total_size)}")
+
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        file_names = ", ".join(os.path.basename(path) for path, _ in files[:3])
+        if len(files) > 3:
+            file_names += f", ... {len(files) - 3} more"
+        self.serial_data_signal.emit(
+            f"HEX FILE SEND: {file_names} ({self.format_byte_count(total_size)})\r\n",
+            timestamp,
+        )
+
+        self.file_send_thread = threading.Thread(
+            target=self._send_files_as_hex_thread,
+            args=(files, total_size),
+            daemon=True,
+        )
+        self.file_send_thread.start()
+
+    def _send_files_as_hex_thread(self, files, total_size):
+        chunk_size = 4096
+        sent_total = 0
+        last_status_time = 0.0
+        preview_shown = False
+
+        try:
+            for path, size in files:
+                if not self.serial or not self.serial.is_open:
+                    raise serial.SerialException("Serial connection lost")
+
+                sent_for_file = 0
+                with open(path, "rb") as file:
+                    while True:
+                        chunk = file.read(chunk_size)
+                        if not chunk:
+                            break
+
+                        if not preview_shown:
+                            preview_shown = True
+                            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                            self.serial_data_signal.emit(
+                                f"HEX preview: {self.format_hex_preview(chunk)}\r\n",
+                                timestamp,
+                            )
+
+                        self.serial.write(chunk)
+                        sent_for_file += len(chunk)
+                        sent_total += len(chunk)
+
+                        now = time.monotonic()
+                        if now - last_status_time >= 0.2:
+                            last_status_time = now
+                            progress = 100 if total_size <= 0 else int((sent_total * 100) / total_size)
+                            self.file_send_progress_signal.emit(max(0, min(100, progress)))
+                            self.file_send_status_signal.emit(
+                                "Sending file as HEX: "
+                                f"{self.format_byte_count(sent_total)} / {self.format_byte_count(total_size)}"
+                            )
+
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                display_command = (
+                    f"HEX FILE: {os.path.basename(path)} "
+                    f"({self.format_byte_count(sent_for_file)})"
+                )
+                self.log_data_signal.emit("TX", display_command, timestamp)
+
+            self.file_send_complete_signal.emit(
+                True,
+                f"File HEX send completed: {self.format_byte_count(sent_total)}",
+            )
+        except Exception as e:
+            self.file_send_complete_signal.emit(False, f"File HEX send failed: {e}")
+
+    def update_file_send_progress(self, percent):
+        self.status_progress.setVisible(True)
+        self.status_progress.setValue(max(0, min(100, percent)))
+
+    def on_file_send_complete(self, success, message):
+        self.file_send_active = False
+        self.file_send_thread = None
+        if success:
+            self.update_file_send_progress(100)
+            QTimer.singleShot(800, lambda: self.status_progress.setVisible(self.file_send_active))
+        else:
+            self.status_progress.setVisible(False)
+        self.update_status_bar(message)
+
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        color = "\x1b[36m" if success else "\x1b[31m"
+        self.serial_data_signal.emit(f"{color}{message}\x1b[0m\r\n", timestamp)
 
     def handle_tab(self):
         """Tab key: Send input buffer + tab to serial, use response for autocomplete"""
@@ -1914,6 +2105,7 @@ class SerialTerminal(QMainWindow):
                 self.serial.baudrate = self.baudrate
                 self.serial.parity = parity_map.get(self.parity, serial.PARITY_NONE)
                 self.serial.timeout = 0.1
+                self.serial.write_timeout = 1
                 self.serial.rtscts = rtscts
                 self.serial.xonxoff = xonxoff
                 
@@ -2806,7 +2998,7 @@ class SerialTerminal(QMainWindow):
         if self.serial and self.serial.is_open:
             return
         try:
-            self.serial = serial.Serial(self.selected_port, self.baudrate, timeout=0.1)
+            self.serial = serial.Serial(self.selected_port, self.baudrate, timeout=0.1, write_timeout=1)
             self.running = True
             self.thread = threading.Thread(target=self.read_serial_data, daemon=True)
             self.thread.start()

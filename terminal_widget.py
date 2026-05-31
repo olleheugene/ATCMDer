@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices, QPainterPath
-from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal, QPoint
+from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal, QPoint, QEvent
 import re
 import unicodedata
 import utils
@@ -11,6 +11,8 @@ TERMINAL_LINE_NUMBER_SEPARATOR = QColor(42, 52, 68)
 
 class TerminalWidget(QAbstractScrollArea):
     request_paste = Signal()
+    files_dropped = Signal(list)
+
     def __init__(self, parent=None, font_family=None, font_size=utils.DEFAULT_TERMINAL_FONT_SIZE):
         super().__init__(parent)
         
@@ -75,8 +77,10 @@ class TerminalWidget(QAbstractScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAcceptDrops(True)
         self.setAutoFillBackground(False)
         self.viewport().setAutoFillBackground(False)
+        self.viewport().setAcceptDrops(True)
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Base, TERMINAL_BG)
@@ -137,6 +141,52 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().setCursor(Qt.IBeamCursor)
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
+        self.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.viewport():
+            if event.type() == QEvent.Type.DragEnter:
+                self.dragEnterEvent(event)
+                return True
+            if event.type() == QEvent.Type.DragMove:
+                self.dragMoveEvent(event)
+                return True
+            if event.type() == QEvent.Type.Drop:
+                self.dropEvent(event)
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def _dropped_file_paths(self, event):
+        mime_data = event.mimeData()
+        if not mime_data.hasUrls():
+            return []
+
+        file_paths = []
+        for url in mime_data.urls():
+            if url.isLocalFile():
+                file_paths.append(url.toLocalFile())
+        return file_paths
+
+    def dragEnterEvent(self, event):
+        if self._dropped_file_paths(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if self._dropped_file_paths(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        file_paths = self._dropped_file_paths(event)
+        if file_paths:
+            event.acceptProposedAction()
+            self.files_dropped.emit(file_paths)
+        else:
+            event.ignore()
 
     def _url_at(self, line_idx, col):
         """Return URL at given line/column if present."""
