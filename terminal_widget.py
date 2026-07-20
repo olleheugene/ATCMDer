@@ -103,6 +103,7 @@ class TerminalWidget(QAbstractScrollArea):
         self.selection_end = None    # (line, col)
         self.is_selecting = False
         self.ime_composing = False
+        self.preedit_text = ""
 
         # Cursor variables
         self.cursor_line = 0
@@ -167,12 +168,15 @@ class TerminalWidget(QAbstractScrollArea):
         commit = event.commitString()
         if preedit:
             self.ime_composing = True
+            self.preedit_text = preedit
         else:
             self.ime_composing = False
+            self.preedit_text = ""
             
         if commit:
             self.input_method_commit.emit(commit)
         event.accept()
+        self.viewport().update()
 
     def inputMethodQuery(self, query):
         if query == Qt.InputMethodQuery.ImEnabled:
@@ -671,17 +675,13 @@ class TerminalWidget(QAbstractScrollArea):
                         painter.drawLine(int(start_px), underline_y, int(end_px), underline_y)
                 painter.restore()
             
-            if (self.cursor_visible and 
-                line_idx == self.cursor_line and 
-                self.hasFocus()):
+            if (line_idx == self.cursor_line and self.hasFocus()):
                 # Calculate cursor position based on actual text rendering
                 line_text = ""
                 if line_idx < len(self.lines):
                     line_text = self._line_text(self.lines[line_idx], line_idx)
-
                     calculated_cursor_x_offset = self._get_text_width_up_to_col(self.lines[line_idx], self.cursor_col)
                     cursor_x = text_start_x + 5 - h_scroll_offset + calculated_cursor_x_offset
-
                 else:
                     cursor_x = text_start_x + 5 - h_scroll_offset
 
@@ -689,7 +689,21 @@ class TerminalWidget(QAbstractScrollArea):
                 if self.cursor_col == len(line_text):
                     cursor_x = text_start_x + 5 - h_scroll_offset + self._measure_text_width(line_text)
 
-                if cursor_x >= text_start_x and cursor_x < effective_width - 5:
+                # Draw preedit text (IME composition)
+                if self.preedit_text:
+                    painter.save()
+                    preedit_color = QColor(100, 200, 255)  # Light cyan/blue for composing text
+                    painter.setPen(preedit_color)
+                    y_line = y + self.font_metrics.ascent()
+                    painter.drawText(int(cursor_x), int(y_line), self.preedit_text)
+                    
+                    preedit_width = self._measure_text_width(self.preedit_text)
+                    underline_y = min(y + self.line_height - 2, effective_height - 1)
+                    painter.drawLine(int(cursor_x), int(underline_y), int(cursor_x + preedit_width), int(underline_y))
+                    painter.restore()
+                    cursor_x += preedit_width
+
+                if self.cursor_visible and cursor_x >= text_start_x and cursor_x < effective_width - 5:
                     painter.setPen(QColor(200, 255, 200))
                     painter.drawRect(cursor_x, y, 2, self.line_height)
             
