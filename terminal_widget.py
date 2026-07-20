@@ -12,6 +12,8 @@ TERMINAL_LINE_NUMBER_SEPARATOR = QColor(42, 52, 68)
 class TerminalWidget(QAbstractScrollArea):
     request_paste = Signal()
     files_dropped = Signal(list)
+    input_method_commit = Signal(str)
+    key_pressed = Signal(object)
 
     def __init__(self, parent=None, font_family=None, font_size=utils.DEFAULT_TERMINAL_FONT_SIZE):
         super().__init__(parent)
@@ -82,6 +84,8 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().setAutoFillBackground(False)
         self.viewport().setAcceptDrops(True)
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
+        self.viewport().setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Base, TERMINAL_BG)
         self.setPalette(palette)
@@ -98,6 +102,7 @@ class TerminalWidget(QAbstractScrollArea):
         self.selection_start = None  # (line, col)
         self.selection_end = None    # (line, col)
         self.is_selecting = False
+        self.ime_composing = False
 
         # Cursor variables
         self.cursor_line = 0
@@ -156,6 +161,52 @@ class TerminalWidget(QAbstractScrollArea):
                 return True
 
         return super().eventFilter(obj, event)
+
+    def inputMethodEvent(self, event):
+        preedit = event.preeditString()
+        commit = event.commitString()
+        if preedit:
+            self.ime_composing = True
+        else:
+            self.ime_composing = False
+            
+        if commit:
+            self.input_method_commit.emit(commit)
+        event.accept()
+
+    def inputMethodQuery(self, query):
+        if query == Qt.InputMethodQuery.ImEnabled:
+            return True
+        elif query == Qt.InputMethodQuery.ImCursorRectangle:
+            # Calculate cursor position in viewport coordinates
+            effective_height = self.viewport().height()
+            if self.horizontalScrollBar().isVisible():
+                effective_height -= self.horizontalScrollBar().height()
+            visible_lines = max(1, effective_height // self.line_height)
+            total_lines = len(self.lines)
+            
+            if self.auto_scroll:
+                start_line = max(0, total_lines - visible_lines)
+            else:
+                start_line = max(0, total_lines - visible_lines - self.scroll_offset)
+            
+            y = (self.cursor_line - start_line) * self.line_height + 5
+            
+            # x-coordinate:
+            text_start_x = 0
+            if self.show_line_numbers:
+                text_start_x += self.line_number_width
+            if self.show_timestamps:
+                text_start_x += self.timestamp_width
+            h_scroll_offset = self.horizontalScrollBar().value()
+            
+            cursor_x = text_start_x + 5 - h_scroll_offset
+            if self.cursor_line < len(self.lines):
+                calculated_cursor_x_offset = self._get_text_width_up_to_col(self.lines[self.cursor_line], self.cursor_col)
+                cursor_x += calculated_cursor_x_offset
+            
+            return QRect(int(cursor_x), int(y), 2, self.line_height)
+        return super().inputMethodQuery(query)
 
     def _dropped_file_paths(self, event):
         mime_data = event.mimeData()
@@ -1336,3 +1387,7 @@ class TerminalWidget(QAbstractScrollArea):
         if self.serial and self.serial.is_open:
             self.toggle_serial_connection()
             self.toggle_serial_connection()
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        self.key_pressed.emit(event)

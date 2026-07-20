@@ -9,7 +9,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog, QProgressBar
 )
-from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator
+from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator, QInputMethodEvent
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression, QSize
 import utils
 from terminal_widget import TerminalWidget
@@ -187,6 +187,7 @@ class SerialTerminal(QMainWindow):
         self.command_history = []
         self.history_index = -1
         self.current_input_buffer = ""
+        self.ime_composing = False
         self.line_ending = "\r\n"  # Default to CR+LF
         self._loading_command_list = False
         self.file_send_thread = None
@@ -472,6 +473,8 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.installEventFilter(self)
         self.terminal_widget.request_paste.connect(self.handle_paste)
         self.terminal_widget.files_dropped.connect(self.handle_terminal_files_dropped)
+        self.terminal_widget.input_method_commit.connect(self.handle_input_method_commit)
+        self.terminal_widget.key_pressed.connect(self.handle_terminal_key)
         self.clear_btn = QPushButton()
         self.clear_btn.setObjectName("toolbarIconButton")
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
@@ -751,133 +754,138 @@ class SerialTerminal(QMainWindow):
                 # Check scroll position after resizing
                 QTimer.singleShot(50, lambda: self.check_scroll_position())
                 return False  # Let Qt handle the resizing
-            if event.type() == QEvent.Type.KeyPress:
-                key = event.key()
-                text = event.text()
-                modifiers = event.modifiers()
-
-                if (modifiers & Qt.ControlModifier or modifiers & Qt.MetaModifier) and key == Qt.Key_F:
-                    self.show_find_dialog()
-                    return True
-                
-                # Font size adjustment
-                if modifiers == Qt.KeyboardModifier.ControlModifier:
-                    # Ctrl + Plus
-                    if key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
-                        self.increase_font_size()
-                        return True
-                    elif key == Qt.Key.Key_Minus:
-                        self.decrease_font_size()
-                        return True
-                    elif key == Qt.Key.Key_0:
-                        self.reset_font_size()
-                        return True
-                    elif key == Qt.Key.Key_C:
-                        self.handle_ctrl_c()
-                        return True
-                    elif key == Qt.Key.Key_V:
-                        self.handle_paste()
-                        return True
-                    elif key == Qt.Key.Key_A:
-                        self.terminal_widget.select_all()
-                        return True
-                elif modifiers == Qt.KeyboardModifier.AltModifier:
-                    # Alt + 1
-                    if key == Qt.Key.Key_1:
-                        self.send_lineedit_command(1)
-                        return True
-                    elif key == Qt.Key.Key_2:
-                        self.send_lineedit_command(2)
-                        return True
-                    elif key == Qt.Key.Key_3:
-                        self.send_lineedit_command(3)
-                        return True
-                    elif key == Qt.Key.Key_4:
-                        self.send_lineedit_command(4)
-                        return True
-                    elif key == Qt.Key.Key_5:
-                        self.send_lineedit_command(5)
-                        return True
-                    elif key == Qt.Key.Key_6:
-                        self.send_lineedit_command(6)
-                        return True
-                    elif key == Qt.Key.Key_7:
-                        self.send_lineedit_command(7)
-                        return True
-                    elif key == Qt.Key.Key_8:
-                        self.send_lineedit_command(8)
-                        return True
-                    elif key == Qt.Key.Key_9:
-                        self.send_lineedit_command(9)
-                        return True
-                    elif key == Qt.Key.Key_0:
-                        self.send_lineedit_command(0)
-                        return True
-                else:
-                    if key == Qt.Key_F1:
-                        self.show_shortcut_list()
-                        return True
-                    elif key == Qt.Key_F2:
-                        # Connect if not already connected
-                        if not (self.serial and self.serial.is_open):
-                            self.toggle_serial_connection()
-                        return True
-                    elif key == Qt.Key_F3:
-                        # Disconnect if connected
-                        if self.serial and self.serial.is_open:
-                            self.toggle_serial_connection()
-                        return True
-                    elif key == Qt.Key_F4:
-                        self.serial_port_combo.showPopup()
-                        return True
-                    elif key == Qt.Key_F5:
-                        self.refresh_serial_ports(False)
-                        return True
-                    elif key == Qt.Key_F6:
-                        self.toggle_left_panel()
-                        return True
-                    elif key == Qt.Key_F:
-                        # Ctrl+F or Cmd+F to show find dialog
-                        if (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)):
-                            self.show_find_dialog()
-                            return True
-        
-            if not (self.serial and self.serial.is_open):
-                return True
-            
-            # Arrow Up - Command history (previous command)
-            if key == Qt.Key.Key_Up:
-                self.handle_history_up()
-                return True
-            
-            # Arrow Down - Command history (next command)
-            elif key == Qt.Key.Key_Down:
-                self.handle_history_down()
-                return True
-            
-            # Printable character input
-            elif text and text.isprintable() and not (modifiers & Qt.KeyboardModifier.ControlModifier):
-                self.handle_character_input(text)
-                return True
-            
-            # Enter key
-            elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
-                self.handle_enter()
-                return True
-            
-            # Backspace key
-            elif key == Qt.Key.Key_Backspace:
-                self.handle_backspace()
-                return True
-            
-            # Tab key (for autocomplete, etc.)
-            elif key == Qt.Key.Key_Tab:
-                self.handle_tab()
-                return True
-            
-            return True
             
         return super().eventFilter(obj, event)
+
+    def handle_terminal_key(self, event):
+        key = event.key()
+        text = event.text()
+        modifiers = event.modifiers()
+
+        # Let the input method handle composition keys
+        if self.terminal_widget.ime_composing and not (modifiers & (Qt.ControlModifier | Qt.MetaModifier)):
+            return
+        if text and any(ord(c) > 127 for c in text):
+            return
+
+        if (modifiers & Qt.ControlModifier or modifiers & Qt.MetaModifier) and key == Qt.Key_F:
+            self.show_find_dialog()
+            return
+
+        # Font size adjustment
+        if modifiers == Qt.KeyboardModifier.ControlModifier:
+            # Ctrl + Plus
+            if key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
+                self.increase_font_size()
+                return
+            elif key == Qt.Key.Key_Minus:
+                self.decrease_font_size()
+                return
+            elif key == Qt.Key.Key_0:
+                self.reset_font_size()
+                return
+            elif key == Qt.Key.Key_C:
+                self.handle_ctrl_c()
+                return
+            elif key == Qt.Key.Key_V:
+                self.handle_paste()
+                return
+            elif key == Qt.Key.Key_A:
+                self.terminal_widget.select_all()
+                return
+        elif modifiers == Qt.KeyboardModifier.AltModifier:
+            # Alt + 1
+            if key == Qt.Key.Key_1:
+                self.send_lineedit_command(1)
+                return
+            elif key == Qt.Key.Key_2:
+                self.send_lineedit_command(2)
+                return
+            elif key == Qt.Key.Key_3:
+                self.send_lineedit_command(3)
+                return
+            elif key == Qt.Key.Key_4:
+                self.send_lineedit_command(4)
+                return
+            elif key == Qt.Key.Key_5:
+                self.send_lineedit_command(5)
+                return
+            elif key == Qt.Key.Key_6:
+                self.send_lineedit_command(6)
+                return
+            elif key == Qt.Key.Key_7:
+                self.send_lineedit_command(7)
+                return
+            elif key == Qt.Key.Key_8:
+                self.send_lineedit_command(8)
+                return
+            elif key == Qt.Key.Key_9:
+                self.send_lineedit_command(9)
+                return
+            elif key == Qt.Key.Key_0:
+                self.send_lineedit_command(0)
+                return
+        else:
+            if key == Qt.Key_F1:
+                self.show_shortcut_list()
+                return
+            elif key == Qt.Key_F2:
+                # Connect if not already connected
+                if not (self.serial and self.serial.is_open):
+                    self.toggle_serial_connection()
+                return
+            elif key == Qt.Key_F3:
+                # Disconnect if connected
+                if self.serial and self.serial.is_open:
+                    self.toggle_serial_connection()
+                return
+            elif key == Qt.Key_F4:
+                self.serial_port_combo.showPopup()
+                return
+            elif key == Qt.Key_F5:
+                self.refresh_serial_ports(False)
+                return
+            elif key == Qt.Key_F6:
+                self.toggle_left_panel()
+                return
+            elif key == Qt.Key_F:
+                # Ctrl+F or Cmd+F to show find dialog
+                if (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)):
+                    self.show_find_dialog()
+                    return
+
+        if not (self.serial and self.serial.is_open):
+            return
+        
+        # Arrow Up - Command history (previous command)
+        if key == Qt.Key.Key_Up:
+            self.handle_history_up()
+            return
+        
+        # Arrow Down - Command history (next command)
+        elif key == Qt.Key.Key_Down:
+            self.handle_history_down()
+            return
+        
+        # Printable character input
+        elif text and text.isprintable() and not (modifiers & Qt.KeyboardModifier.ControlModifier):
+            self.handle_character_input(text)
+            return
+        
+        # Enter key
+        elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+            self.handle_enter()
+            return
+        
+        # Backspace key
+        elif key == Qt.Key.Key_Backspace:
+            self.handle_backspace()
+            return
+        
+        # Tab key (for autocomplete, etc.)
+        elif key == Qt.Key.Key_Tab:
+            self.handle_tab()
+            return
 
     def baudrate_number_length(self):
         number_part, _ = self.split_baudrate_text(self.baudrate_combo.lineEdit().text())
@@ -976,6 +984,11 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.append_text_to_current_line(char)
         # Set cursor to end of last line without additional processing
         self.terminal_widget.set_cursor_to_end()
+
+    def handle_input_method_commit(self, text):
+        """Handle committed IME text"""
+        for char in text:
+            self.handle_character_input(char)
 
     def handle_backspace(self):
         """Handle backspace key"""
@@ -2219,8 +2232,9 @@ class SerialTerminal(QMainWindow):
             connect_layout = QHBoxLayout()
             connect_layout.setSpacing(6)
             connect_layout.setContentsMargins(0, 0, 0, 0)
-            connect_layout.addWidget(self.connect_btn)
+            connect_layout.addWidget(self.connect_btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             if hasattr(self, "terminal_action_widget"):
+                connect_layout.addStretch()
                 connect_layout.addWidget(self.terminal_action_widget, 0, Qt.AlignmentFlag.AlignVCenter)
             layout.addLayout(connect_layout)
 
@@ -2697,6 +2711,8 @@ class SerialTerminal(QMainWindow):
 
     def read_serial_data(self):
         """Thread function to read serial data"""
+        import codecs
+        decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         buffer_start_time = None
         emit_batch = []
 
@@ -2704,10 +2720,7 @@ class SerialTerminal(QMainWindow):
             try:
                 if self.serial.in_waiting > 0:
                     data_bytes = self.serial.read(self.serial.in_waiting)
-                    try:
-                        data_str = data_bytes.decode('utf-8', errors='replace')
-                    except UnicodeDecodeError:
-                        data_str = data_bytes.decode('latin-1', errors='replace')
+                    data_str = decoder.decode(data_bytes)
 
                     if data_str:
                         combined_data = self.ansi_buffer + data_str
