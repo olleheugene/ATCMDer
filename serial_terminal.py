@@ -7,7 +7,7 @@ import re
 import subprocess
 from datetime import datetime
 from PySide6.QtWidgets import (
-    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog, QProgressBar
+    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog, QProgressBar, QFormLayout, QScrollArea, QFrame
 )
 from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator, QInputMethodEvent
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression, QSize
@@ -227,6 +227,11 @@ class SerialTerminal(QMainWindow):
         self.baudrate = baudrate
         self.flow_control = 'None'
         self.parity = 'None'
+        self.bytesize = 8
+        self.stopbits = 1
+        self.rts_state = False
+        self.dtr_state = False
+        self.detailed_settings_expanded = utils.load_user_setting("detailed_settings_expanded", False)
         self.status = self.statusBar()
         self.status_progress = QProgressBar()
         self.status_progress.setFixedWidth(160)
@@ -347,6 +352,7 @@ class SerialTerminal(QMainWindow):
         self.serial_group.setObjectName("serialSettingsGroup")
         self.serial_inline_widget = QWidget()
         self.serial_inline_widget.setObjectName("serialSettingsInlineGroup")
+        self._init_detailed_serial_settings()
         self._setup_serial_group_layout(horizontal=False)
         self.left_widget_layout.addWidget(self.serial_group)
 
@@ -388,7 +394,7 @@ class SerialTerminal(QMainWindow):
         self.command_rows_widget = QWidget()
         self.command_rows_layout = QVBoxLayout()
         self.command_rows_layout.setContentsMargins(0, 0, 0, 0)
-        self.command_rows_layout.setSpacing(8)
+        self.command_rows_layout.setSpacing(3)
         self.command_rows_widget.setLayout(self.command_rows_layout)
         self.left_widget_layout.addWidget(self.command_rows_widget)
         
@@ -564,8 +570,17 @@ class SerialTerminal(QMainWindow):
         btn_layout.addWidget(collapse_button_shell)
         btn_layout.addStretch()
         btn_widget.setLayout(btn_layout)
+        self.side_scroll_area = QScrollArea()
+        self.side_scroll_area.setObjectName("sideScrollArea")
+        self.side_scroll_area.setWidget(self.left_widget)
+        self.side_scroll_area.setWidgetResizable(True)
+        self.side_scroll_area.setFrameShape(QFrame.NoFrame)
+        self.side_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.side_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.side_scroll_area.setStyleSheet("QScrollArea#sideScrollArea { border: none; background: transparent; }")
+
         splitter = QSplitter()
-        splitter.addWidget(self.left_widget)
+        splitter.addWidget(self.side_scroll_area)
         splitter.addWidget(btn_widget)
         splitter.addWidget(self.right_widget)
         splitter.setStretchFactor(0, 0)
@@ -629,14 +644,15 @@ class SerialTerminal(QMainWindow):
         QTimer.singleShot(0, self.fit_window_height_to_content)
 
     def fit_window_height_to_content(self, only_grow=False):
-        self.left_widget.adjustSize()
-        content_height = self.left_widget.sizeHint().height()
-        menu_height = self.menuBar().sizeHint().height()
-        status_height = self.statusBar().sizeHint().height()
-        target_height = content_height + menu_height + status_height + 2
-        self.setMinimumHeight(target_height)
-        if not only_grow or self.height() < target_height:
-            self.resize(self.width(), target_height)
+        self.setMinimumHeight(400)
+        if not only_grow:
+            self.left_widget.adjustSize()
+            content_height = self.left_widget.sizeHint().height()
+            menu_height = self.menuBar().sizeHint().height()
+            status_height = self.statusBar().sizeHint().height()
+            target_height = min(content_height + menu_height + status_height + 2, 850)
+            if self.height() < target_height:
+                self.resize(self.width(), target_height)
 
     def eventFilter(self, obj, event):
         key = None
@@ -2052,7 +2068,7 @@ class SerialTerminal(QMainWindow):
 
         QApplication.instance().setStyleSheet(style)
         if hasattr(self, "command_rows_layout"):
-            self.command_rows_layout.setSpacing(4 if theme_name in {"web", "web_dark"} else 8)
+            self.command_rows_layout.setSpacing(3)
         self.update_collapse_divider_visibility(theme_name)
         self.update_theme_icons(theme_name)
 
@@ -2101,8 +2117,8 @@ class SerialTerminal(QMainWindow):
                 self.connect_btn.setChecked(False)
                 return
             try:
-                rtscts = (self.flow_control == 'RTS/CTS (Hardware)')
-                xonxoff = (self.flow_control == 'XON/XOFF (Software)')
+                rtscts = ('RTS/CTS' in self.flow_control)
+                xonxoff = ('XON/XOFF' in self.flow_control)
 
                 parity_map = {
                     'None': serial.PARITY_NONE,
@@ -2112,15 +2128,43 @@ class SerialTerminal(QMainWindow):
                     'Space': serial.PARITY_SPACE
                 }
                 
+                bytesize_map = {
+                    5: serial.FIVEBYTES,
+                    6: serial.SIXBYTES,
+                    7: serial.SEVENBYTES,
+                    8: serial.EIGHTBYTES
+                }
+                
+                stopbits_map = {
+                    1: serial.STOPBITS_ONE,
+                    1.5: serial.STOPBITS_ONE_POINT_FIVE,
+                    2: serial.STOPBITS_TWO
+                }
+                
                 # Create and configure serial port
                 self.serial = serial.Serial()
                 self.serial.port = self.selected_port
                 self.serial.baudrate = self.baudrate
+                
+                try:
+                    bs_val = int(self.bytesize)
+                except (ValueError, TypeError):
+                    bs_val = 8
+                self.serial.bytesize = bytesize_map.get(bs_val, serial.EIGHTBYTES)
+                
+                try:
+                    sb_val = float(self.stopbits)
+                except (ValueError, TypeError):
+                    sb_val = 1
+                self.serial.stopbits = stopbits_map.get(sb_val, serial.STOPBITS_ONE)
+                
                 self.serial.parity = parity_map.get(self.parity, serial.PARITY_NONE)
                 self.serial.timeout = 0.1
                 self.serial.write_timeout = 1
                 self.serial.rtscts = rtscts
                 self.serial.xonxoff = xonxoff
+                self.serial.rts = self.rts_state
+                self.serial.dtr = self.dtr_state
                 
                 self.serial.open()
                 
@@ -2184,6 +2228,178 @@ class SerialTerminal(QMainWindow):
                 self.serial_port_combo.setCurrentIndex(0)
                 self.selected_port = ports[0]
 
+    def _init_detailed_serial_settings(self):
+        self.toggle_detailed_btn = QPushButton("▲ Detailed Settings" if self.detailed_settings_expanded else "▼ Detailed Settings")
+        self.toggle_detailed_btn.setObjectName("toggleDetailedSettingsButton")
+        self.toggle_detailed_btn.setStyleSheet("""
+            QPushButton#toggleDetailedSettingsButton {
+                border: none;
+                color: #88A0C0;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 4px 0px 2px 0px;
+                text-align: left;
+                background: transparent;
+            }
+            QPushButton#toggleDetailedSettingsButton:hover {
+                color: #38DFD8;
+            }
+        """)
+        self.toggle_detailed_btn.setCursor(Qt.PointingHandCursor)
+        self.toggle_detailed_btn.clicked.connect(self.toggle_detailed_settings)
+
+        self.detailed_settings_widget = QWidget()
+        self.detailed_settings_widget.setObjectName("detailedSerialSettingsWidget")
+        
+        detailed_layout = QFormLayout()
+        detailed_layout.setContentsMargins(0, 4, 0, 4)
+        detailed_layout.setSpacing(4)
+        detailed_layout.setVerticalSpacing(4)
+        detailed_layout.setHorizontalSpacing(8)
+        detailed_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        # 1. Data Bits
+        self.bytesize_combo = QComboBox()
+        self.bytesize_combo.addItems(["5", "6", "7", "8"])
+        self.bytesize_combo.setCurrentText(str(self.bytesize))
+        self.bytesize_combo.currentTextChanged.connect(self.on_bytesize_changed)
+        detailed_layout.addRow("Data Bits:", self.bytesize_combo)
+
+        # 2. Stop Bits
+        self.stopbits_combo = QComboBox()
+        self.stopbits_combo.addItems(["1", "1.5", "2"])
+        stopbits_str = "1.5" if self.stopbits == 1.5 else str(int(self.stopbits) if isinstance(self.stopbits, (int, float)) and self.stopbits == int(self.stopbits) else self.stopbits)
+        self.stopbits_combo.setCurrentText(stopbits_str)
+        self.stopbits_combo.currentTextChanged.connect(self.on_stopbits_changed)
+        detailed_layout.addRow("Stop Bits:", self.stopbits_combo)
+
+        # 3. Parity
+        self.parity_combo = QComboBox()
+        self.parity_combo.addItems(["None", "Even", "Odd", "Mark", "Space"])
+        self.parity_combo.setCurrentText(self.parity)
+        self.parity_combo.currentTextChanged.connect(self.on_parity_changed)
+        detailed_layout.addRow("Parity:", self.parity_combo)
+
+        # 4. Flow Control
+        self.flow_combo = QComboBox()
+        self.flow_combo.addItems(["None", "RTS/CTS", "XON/XOFF"])
+        flow_display = "RTS/CTS" if "RTS/CTS" in self.flow_control else ("XON/XOFF" if "XON/XOFF" in self.flow_control else "None")
+        self.flow_combo.setCurrentText(flow_display)
+        self.flow_combo.currentTextChanged.connect(self.on_flow_control_changed)
+        detailed_layout.addRow("Flow Control:", self.flow_combo)
+
+        # 5. Line Ending
+        self.line_ending_combo = QComboBox()
+        self.line_ending_combo.addItems(["CR+LF", "CR", "LF"])
+        if self.line_ending == "\r\n":
+            self.line_ending_combo.setCurrentText("CR+LF")
+        elif self.line_ending == "\r":
+            self.line_ending_combo.setCurrentText("CR")
+        else:
+            self.line_ending_combo.setCurrentText("LF")
+        self.line_ending_combo.currentTextChanged.connect(self.on_line_ending_changed)
+        detailed_layout.addRow("Line Ending:", self.line_ending_combo)
+
+        # 6. Signals (RTS & DTR)
+        signals_layout = QHBoxLayout()
+        signals_layout.setSpacing(12)
+        signals_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.rts_checkbox = QCheckBox("RTS")
+        self.rts_checkbox.setChecked(self.rts_state)
+        self.rts_checkbox.stateChanged.connect(self.on_rts_changed)
+        signals_layout.addWidget(self.rts_checkbox)
+
+        self.dtr_checkbox = QCheckBox("DTR")
+        self.dtr_checkbox.setChecked(self.dtr_state)
+        self.dtr_checkbox.stateChanged.connect(self.on_dtr_changed)
+        signals_layout.addWidget(self.dtr_checkbox)
+
+        detailed_layout.addRow("Signals:", signals_layout)
+
+        self.detailed_settings_widget.setLayout(detailed_layout)
+        self.detailed_settings_widget.setVisible(self.detailed_settings_expanded)
+
+    def toggle_detailed_settings(self):
+        self.detailed_settings_expanded = not self.detailed_settings_expanded
+        self.detailed_settings_widget.setVisible(self.detailed_settings_expanded)
+        self.toggle_detailed_btn.setText("▲ Detailed Settings" if self.detailed_settings_expanded else "▼ Detailed Settings")
+        utils.save_user_setting("detailed_settings_expanded", self.detailed_settings_expanded)
+
+    def on_bytesize_changed(self, text):
+        try:
+            self.bytesize = int(text)
+        except ValueError:
+            self.bytesize = 8
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.bytesize = {5: serial.FIVEBYTES, 6: serial.SIXBYTES, 7: serial.SEVENBYTES, 8: serial.EIGHTBYTES}.get(self.bytesize, serial.EIGHTBYTES)
+            except Exception:
+                pass
+
+    def on_stopbits_changed(self, text):
+        try:
+            val = float(text)
+            self.stopbits = int(val) if val.is_integer() else val
+        except ValueError:
+            self.stopbits = 1
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.stopbits = {1: serial.STOPBITS_ONE, 1.5: serial.STOPBITS_ONE_POINT_FIVE, 2: serial.STOPBITS_TWO}.get(self.stopbits, serial.STOPBITS_ONE)
+            except Exception:
+                pass
+
+    def on_parity_changed(self, text):
+        self.parity = text
+        if hasattr(self, "parity_combo") and self.parity_combo.currentText() != text:
+            self.parity_combo.setCurrentText(text)
+        if self.serial and self.serial.is_open:
+            try:
+                parity_map = {'None': serial.PARITY_NONE, 'Even': serial.PARITY_EVEN, 'Odd': serial.PARITY_ODD, 'Mark': serial.PARITY_MARK, 'Space': serial.PARITY_SPACE}
+                self.serial.parity = parity_map.get(self.parity, serial.PARITY_NONE)
+            except Exception:
+                pass
+
+    def on_flow_control_changed(self, text):
+        if text == "RTS/CTS":
+            self.flow_control = 'RTS/CTS (Hardware)'
+        elif text == "XON/XOFF":
+            self.flow_control = 'XON/XOFF (Software)'
+        else:
+            self.flow_control = 'None'
+        if hasattr(self, "flow_combo") and self.flow_combo.currentText() != text:
+            self.flow_combo.setCurrentText(text)
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.rtscts = (text == "RTS/CTS")
+                self.serial.xonxoff = (text == "XON/XOFF")
+            except Exception:
+                pass
+
+    def on_line_ending_changed(self, text):
+        if text == "CR+LF":
+            self.line_ending = "\r\n"
+        elif text == "CR":
+            self.line_ending = "\r"
+        elif text == "LF":
+            self.line_ending = "\n"
+
+    def on_rts_changed(self, state):
+        self.rts_state = bool(state)
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.rts = self.rts_state
+            except Exception:
+                pass
+
+    def on_dtr_changed(self, state):
+        self.dtr_state = bool(state)
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.dtr = self.dtr_state
+            except Exception:
+                pass
+
     def _setup_serial_group_layout(self, horizontal=False):
         
         self.port_label.setParent(None)
@@ -2192,6 +2408,10 @@ class SerialTerminal(QMainWindow):
         self.baudrate_combo.setParent(None)
         self.connect_btn.setParent(None)
         self.refresh_btn.setParent(None)
+        if hasattr(self, "toggle_detailed_btn"):
+            self.toggle_detailed_btn.setParent(None)
+        if hasattr(self, "detailed_settings_widget"):
+            self.detailed_settings_widget.setParent(None)
         if hasattr(self, "terminal_action_widget"):
             self._detach_terminal_action_widget()
 
@@ -2238,9 +2458,12 @@ class SerialTerminal(QMainWindow):
                 connect_layout.addWidget(self.terminal_action_widget, 0, Qt.AlignmentFlag.AlignVCenter)
             layout.addLayout(connect_layout)
 
+            if hasattr(self, "toggle_detailed_btn") and hasattr(self, "detailed_settings_widget"):
+                layout.addWidget(self.toggle_detailed_btn)
+                layout.addWidget(self.detailed_settings_widget)
+
             self.serial_group.setTitle("SERIAL SETTINGS")
             self.serial_group.setMinimumWidth(self._expanded_serial_group_min_width())
-            # self.serial_group.setMinimumHeight(90)
 
         target_widget.setLayout(layout)
 
@@ -3129,6 +3352,14 @@ class SerialTerminal(QMainWindow):
         else:
             self.line_ending = "\r\n"  # Default to CR+LF
         
+        if hasattr(self, "line_ending_combo"):
+            if self.line_ending == "\r\n":
+                self.line_ending_combo.setCurrentText("CR+LF")
+            elif self.line_ending == "\r":
+                self.line_ending_combo.setCurrentText("CR")
+            else:
+                self.line_ending_combo.setCurrentText("LF")
+
         # Force UI update
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
@@ -3152,11 +3383,16 @@ class SerialTerminal(QMainWindow):
         new_parity = serial_settings.get('parity', self.parity)
         if self.parity != new_parity:
             self.parity = new_parity
+            if hasattr(self, "parity_combo"):
+                self.parity_combo.setCurrentText(self.parity)
             is_serial_setting_changed = True
 
         new_flow_control = serial_settings.get('flow_control', self.flow_control)
         if self.flow_control != new_flow_control:
             self.flow_control = new_flow_control
+            if hasattr(self, "flow_combo"):
+                flow_display = "RTS/CTS" if "RTS/CTS" in self.flow_control else ("XON/XOFF" if "XON/XOFF" in self.flow_control else "None")
+                self.flow_combo.setCurrentText(flow_display)
             is_serial_setting_changed = True
             
         if self.serial and self.serial.is_open and is_serial_setting_changed:

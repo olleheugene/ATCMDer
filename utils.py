@@ -338,6 +338,33 @@ def prepare_default_files():
     #     with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
     #         yaml.safe_dump([], f)
 
+def load_user_setting(key, default=None):
+    """Load a specific key from USER_SETTINGS file"""
+    try:
+        if os.path.exists(USER_SETTINGS):
+            with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if isinstance(data, dict):
+                    return data.get(key, default)
+    except Exception as e:
+        print(f"Error loading user setting '{key}': {e}")
+    return default
+
+def save_user_setting(key, value):
+    """Save a specific key to USER_SETTINGS file"""
+    try:
+        data = {}
+        if os.path.exists(USER_SETTINGS):
+            with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            data = {}
+        data[key] = value
+        with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+    except Exception as e:
+        print(f"Error saving user setting '{key}': {e}")
+
 def load_command_history():
     """Load command history from YAML file"""
     try:
