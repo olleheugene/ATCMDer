@@ -9,7 +9,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog, QProgressBar, QFormLayout, QScrollArea, QFrame
 )
-from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator, QInputMethodEvent, QColor
+from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator, QInputMethodEvent, QColor, QCursor
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression, QSize
 import utils
 from terminal_widget import TerminalWidget
@@ -525,10 +525,10 @@ class SerialTerminal(QMainWindow):
         self.ext_cmd_btn.setIcon(QIcon(utils.get_resources(utils.EXTERNAL_CMD_ICON_NAME)))
         self.ext_cmd_btn.setFixedSize(28, 28)
         self.ext_cmd_btn.setIconSize(QSize(20, 20))
-        self.ext_cmd_btn.setToolTip("Run External Shell Command (Right-click to edit)")
+        self.ext_cmd_btn.setToolTip("Run External Shell Command\n(Right-click to edit)")
         self.ext_cmd_btn.clicked.connect(self.execute_external_command)
         self.ext_cmd_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.ext_cmd_btn.customContextMenuRequested.connect(self.edit_external_command)
+        self.ext_cmd_btn.customContextMenuRequested.connect(self._show_ext_cmd_context_menu)
 
         self.terminal_action_widget = QWidget()
         self.terminal_action_widget.setObjectName("terminalActionButtons")
@@ -3517,7 +3517,7 @@ class SerialTerminal(QMainWindow):
         if cmd:
             self.ext_cmd_btn.setToolTip(f"Run External Shell Command:\n{cmd}\n(Right-click to edit)")
         else:
-            self.ext_cmd_btn.setToolTip("Run External Shell Command\n(No command configured - Right-click to edit)")
+            self.ext_cmd_btn.setToolTip("Run External Shell Command\n(No command configured)\n(Right-click to edit)")
 
     def save_ui_state(self):
         try:
@@ -3789,47 +3789,48 @@ class SerialTerminal(QMainWindow):
         
         print(f"Created empty command file: {file_path}")
 
-    def edit_external_command(self, pos=None):
-        """Edit the external shell command via a wide dialog on right-click."""
-        current_cmd = self.settings.get('general', {}).get('external_command', '')
-        
-        dialog = QInputDialog(self)
-        dialog.setWindowTitle("Edit External Shell Command")
-        dialog.setLabelText("Enter external shell command:")
-        dialog.setTextValue(current_cmd)
-        dialog.setMinimumWidth(550)
-        dialog.resize(550, 160)
-        
-        line_edit = dialog.findChild(QLineEdit)
-        if line_edit:
-            line_edit.setMinimumWidth(500)
-            
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            new_cmd = dialog.textValue().strip()
-            if 'general' not in self.settings:
-                self.settings['general'] = {}
-            self.settings['general']['external_command'] = new_cmd
-            
-            # Persist to USER_SETTINGS YAML file
-            try:
-                data = {}
-                if os.path.exists(utils.USER_SETTINGS):
-                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        data = yaml.safe_load(f) or {}
-                if not isinstance(data, dict):
-                    data = {}
-                data.setdefault('general', {})
-                data['general']['external_command'] = new_cmd
-                with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-            except Exception as e:
-                print(f"Error saving external command: {e}")
 
-            self.update_ext_cmd_tooltip()
-            if new_cmd:
-                self.update_status_bar(f"External command updated: {new_cmd}")
-            else:
-                self.update_status_bar("External command cleared.")
+
+    def _show_ext_cmd_context_menu(self, pos):
+        """Show a context menu on right-click of the ext_cmd_btn."""
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        edit_action = menu.addAction("Edit Command...")
+        action = menu.exec(self.ext_cmd_btn.mapToGlobal(pos))
+        if action == edit_action:
+            current_cmd = self.settings.get('general', {}).get('external_command', '')
+            dialog = QInputDialog(self)
+            dialog.setWindowTitle("Edit External Shell Command")
+            dialog.setLabelText("Enter external shell command:")
+            dialog.setTextValue(current_cmd)
+            dialog.setMinimumWidth(600)
+            line_edit = dialog.findChild(QLineEdit)
+            if line_edit:
+                line_edit.setMinimumWidth(560)
+            ok = dialog.exec() == QDialog.DialogCode.Accepted
+            new_cmd = dialog.textValue().strip() if ok else None
+            if ok:
+                if 'general' not in self.settings:
+                    self.settings['general'] = {}
+                self.settings['general']['external_command'] = new_cmd
+                try:
+                    data = {}
+                    if os.path.exists(utils.USER_SETTINGS):
+                        with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                            data = yaml.safe_load(f) or {}
+                    if not isinstance(data, dict):
+                        data = {}
+                    data.setdefault('general', {})
+                    data['general']['external_command'] = new_cmd
+                    with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+                except Exception as e:
+                    print(f"Error saving external command: {e}")
+                self.update_ext_cmd_tooltip()
+                if new_cmd:
+                    self.update_status_bar(f"External command updated: {new_cmd}")
+                else:
+                    self.update_status_bar("External command cleared.")
 
     def execute_external_command(self):
         cmd = self.settings.get('general', {}).get('external_command', '').strip()
