@@ -77,8 +77,8 @@ class TerminalWidget(QAbstractScrollArea):
         self.default_color = QColor(200, 200, 200)
         self.current_color = self.default_color
 
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAcceptDrops(True)
         self.setAutoFillBackground(False)
@@ -394,9 +394,8 @@ class TerminalWidget(QAbstractScrollArea):
         if not text:
             return
 
-        # Enable a setting to ensure the scrollbar is always shown.
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         # Record the current line count (before adding text)
         lines_before = len(self.lines)
@@ -732,8 +731,8 @@ class TerminalWidget(QAbstractScrollArea):
         return len(self._line_text(line_parts))
 
     def update_scrollbar(self):
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         if hasattr(self, 'font'):
             self.font_metrics = QFontMetrics(self.font)

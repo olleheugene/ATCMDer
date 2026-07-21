@@ -20,21 +20,25 @@ class SequenceChartWindow(QMainWindow):
         self.resize(700, 800)
 
         central = QWidget()
+        central.setObjectName("centralWidget")
         layout = QVBoxLayout(central)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
         controls = QWidget()
+        controls.setObjectName("controlsWidget")
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setSpacing(8)
 
         save_btn = QPushButton("Save as PDF")
+        save_btn.setCursor(Qt.PointingHandCursor)
         save_btn.clicked.connect(self.save_as_pdf)
         controls_layout.addWidget(save_btn)
         
         self.hex_btn = QPushButton("HEX")
         self.hex_btn.setCheckable(True)
+        self.hex_btn.setCursor(Qt.PointingHandCursor)
         self.hex_btn.clicked.connect(self.toggle_hex_mode)
         controls_layout.addWidget(self.hex_btn)
         controls_layout.addStretch()
@@ -44,6 +48,23 @@ class SequenceChartWindow(QMainWindow):
         layout.addWidget(self.chart_widget)
         self.setCentralWidget(central)
         self.last_save_dir = os.path.expanduser("~")
+
+    def set_bg_color(self, color):
+        if isinstance(color, str):
+            color = QColor(color)
+        self.chart_widget.set_bg_color(color)
+        bg_hex = color.name()
+        text_hex = "#ffffff" if color.lightness() <= 128 else "#172033"
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget#centralWidget, QWidget#controlsWidget {{
+                background-color: {bg_hex};
+                color: {text_hex};
+            }}
+            QGraphicsView {{
+                background-color: {bg_hex};
+                border: none;
+            }}
+        """)
 
     def add_message(self, direction, message, timestamp=None):
         self.chart_widget.add_message(direction, message, timestamp)
@@ -190,6 +211,27 @@ class SequenceChartWidget(QWidget):
         except Exception:
             pass
             
+    def set_bg_color(self, color):
+        if isinstance(color, str):
+            color = QColor(color)
+        self.bg_color = color
+        self.view.setBackgroundBrush(color)
+        self.scene.setBackgroundBrush(color)
+        
+        is_light_bg = color.lightness() > 128
+        line_color = QColor(60, 60, 60) if is_light_bg else QColor(220, 220, 220)
+        pen = QPen(line_color)
+        pen.setWidth(2)
+        
+        if hasattr(self, 'host_line') and self.host_line:
+            self.host_line.setPen(pen)
+        if hasattr(self, 'device_line') and self.device_line:
+            self.device_line.setPen(pen)
+        if hasattr(self, 'host_label') and self.host_label:
+            self.host_label.setDefaultTextColor(line_color)
+        if hasattr(self, 'device_label') and self.device_label:
+            self.device_label.setDefaultTextColor(line_color)
+
     def set_hex_mode(self, enabled):
         self.hex_mode = enabled
         self.recalculate_layout()
@@ -198,10 +240,10 @@ class SequenceChartWidget(QWidget):
         return ' '.join(f"{ord(c):02X}" for c in text)
         
     def setup_chart(self):
-        # Determine colors based on background brightness
-        bg_color = self.view.palette().color(QPalette.Base)
+        bg_brush = self.view.backgroundBrush()
+        bg_color = bg_brush.color() if bg_brush.style() != Qt.NoBrush else self.view.palette().color(QPalette.Base)
         is_light_bg = bg_color.lightness() > 128
-        line_color = QColor(60, 60, 60) if is_light_bg else Qt.white
+        line_color = QColor(60, 60, 60) if is_light_bg else QColor(220, 220, 220)
 
         # Draw initial vertical lines
         pen = QPen(line_color)
@@ -246,21 +288,22 @@ class SequenceChartWidget(QWidget):
         time_text_right.setFont(font)
         time_text_right.setPos(self.device_x + 5, self.current_y - 10)
 
-        pen = QPen(Qt.black)
+        pen = QPen()
         pen.setWidth(1)
         
         # Determine colors based on background brightness
-        bg_color = self.view.palette().color(QPalette.Base)
+        bg_brush = self.view.backgroundBrush()
+        bg_color = bg_brush.color() if bg_brush.style() != Qt.NoBrush else self.view.palette().color(QPalette.Base)
         is_light_bg = bg_color.lightness() > 128
 
         if direction == "TX": # Host -> Device
             start_x = self.host_x
             end_x = self.device_x
-            color = QColor("darkgreen") if is_light_bg else QColor("lightgreen")
+            color = QColor("darkgreen") if is_light_bg else QColor("#4ade80")
         else: # Device -> Host
             start_x = self.device_x
             end_x = self.host_x
-            color = Qt.black if is_light_bg else QColor("white")
+            color = QColor("blue") if is_light_bg else QColor("#38bdf8")
             
         pen.setColor(color)
         

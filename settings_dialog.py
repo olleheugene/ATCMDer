@@ -44,18 +44,21 @@ class SerialTab(QWidget):
         baudrates = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000"]
         self.baudrate_combo.addItems(baudrates)
         self.baudrate_combo.setEditable(True)
+        self.baudrate_combo.setMinimumWidth(220)
         self.baudrate_combo.setToolTip("Select or enter the default baud rate.")
         form_layout.addRow("Baudrate:", self.baudrate_combo)
 
         # Parity
         self.parity_combo = QComboBox()
         self.parity_combo.addItems(["None", "Even", "Odd", "Mark", "Space"])
+        self.parity_combo.setMinimumWidth(220)
         self.parity_combo.setToolTip("Select the parity bit setting.")
         form_layout.addRow("Parity:", self.parity_combo)
 
         # Flow Control
         self.flow_control_combo = QComboBox()
         self.flow_control_combo.addItems(["None", "RTS/CTS (Hardware)", "XON/XOFF (Software)"])
+        self.flow_control_combo.setMinimumWidth(220)
         self.flow_control_combo.setToolTip("Select the flow control method.")
         form_layout.addRow("Flow Control:", self.flow_control_combo)
 
@@ -221,6 +224,7 @@ class OutputTab(QWidget):
         self.line_ending_combo = QComboBox()
         self.line_ending_combo.addItems(["CR+LF (\\r\\n)", "CR (\\r)", "LF (\\n)"])
         self.line_ending_combo.setCurrentIndex(0)  # Default to CR+LF
+        self.line_ending_combo.setMinimumWidth(220)
         self.line_ending_combo.setToolTip("Select line ending format for serial commands")
         
         line_ending_layout.addRow("Line Ending:", self.line_ending_combo)
@@ -411,6 +415,7 @@ class WindowsTab(QWidget):
         theme_label = QLabel("Theme:")
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["web_dark", "web", "light_blue", "default", "dark", "light"])
+        self.theme_combo.setMinimumWidth(200)
         theme_selection_layout.addWidget(theme_label)
         theme_selection_layout.addWidget(self.theme_combo)
         theme_selection_layout.addStretch()

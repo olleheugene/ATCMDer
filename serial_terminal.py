@@ -397,7 +397,7 @@ class SerialTerminal(QMainWindow):
         self.command_rows_widget = QWidget()
         self.command_rows_layout = QVBoxLayout()
         self.command_rows_layout.setContentsMargins(0, 0, 0, 0)
-        self.command_rows_layout.setSpacing(1)
+        self.command_rows_layout.setSpacing(3)
         self.command_rows_widget.setLayout(self.command_rows_layout)
         self.left_widget_layout.addWidget(self.command_rows_widget)
         
@@ -416,18 +416,7 @@ class SerialTerminal(QMainWindow):
             lineedit.setFixedHeight(25)
             
             mode_label = QLabel()
-            mode_label.setFixedSize(20, 20)
-            mode_label.setScaledContents(True)
-            mode_label.setToolTip("ASCII mode - Click to toggle HEX/ASCII")
-            mode_label.setCursor(Qt.PointingHandCursor)
-            
-            ascii_icon_path = utils.get_resources("ascii_icon.png")
-            if os.path.exists(ascii_icon_path):
-                mode_label.setPixmap(QIcon(ascii_icon_path).pixmap(20, 20))
-            else:
-                mode_label.setText("ASC")
-                mode_label.setAlignment(Qt.AlignCenter)
-                mode_label.setStyleSheet("font-size: 10px; font-weight: bold; color: #555; border: 1px solid #ccc; border-radius: 3px;")
+            self.update_mode_label_style(i, False)
     
             send_btn = QPushButton("SEND")
             send_btn.setObjectName("sendButton")
@@ -1952,7 +1941,18 @@ class SerialTerminal(QMainWindow):
         """Apply loaded YAML data to the UI elements and setup pagination."""
         self._loading_command_list = True
         try:
-            self.full_command_list = sorted(data, key=lambda x: x['index'])
+            existing_indexes = {item.get('index') for item in data if isinstance(item, dict) and 'index' in item}
+            full_data = list(data) if isinstance(data, list) else []
+            for idx in range(LINEEDIT_MAX_NUMBER):
+                if idx not in existing_indexes:
+                    full_data.append({
+                        "index": idx,
+                        "checked": False,
+                        "title": {"text": "", "disabled": False},
+                        "time": 0.5,
+                        "hexmode": False
+                    })
+            self.full_command_list = sorted(full_data, key=lambda x: x['index'])
             self.current_page = 0
             self.update_command_view()
         finally:
@@ -1977,6 +1977,48 @@ class SerialTerminal(QMainWindow):
             lineedit.style().unpolish(lineedit)
             lineedit.style().polish(lineedit)
 
+    def update_mode_label_style(self, index, is_hex):
+        if 0 <= index < len(self.mode_labels):
+            label = self.mode_labels[index]
+            label.setFixedSize(34, 25)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setCursor(Qt.PointingHandCursor)
+            if is_hex:
+                label.setText("HEX")
+                label.setToolTip("HEX mode - Click to toggle to ASCII")
+                label.setStyleSheet("""
+                    QLabel {
+                        font-size: 10px;
+                        font-weight: 800;
+                        color: #ffffff;
+                        background-color: #e11d48;
+                        border: 1px solid #be123c;
+                        border-radius: 3px;
+                    }
+                    QLabel:hover {
+                        background-color: #f43f5e;
+                        border: 1px solid #e11d48;
+                    }
+                """)
+            else:
+                label.setText("ASC")
+                label.setToolTip("ASCII mode - Click to toggle to HEX")
+                label.setStyleSheet("""
+                    QLabel {
+                        font-size: 10px;
+                        font-weight: 800;
+                        color: #94a3b8;
+                        background-color: #334155;
+                        border: 1px solid #475569;
+                        border-radius: 3px;
+                    }
+                    QLabel:hover {
+                        color: #ffffff;
+                        background-color: #475569;
+                        border: 1px solid #64748b;
+                    }
+                """)
+
     def update_command_view(self):
         start_index_in_list = self.current_page * LINEEDIT_MAX_NUMBER
         end_index_in_list = start_index_in_list + LINEEDIT_MAX_NUMBER
@@ -1994,25 +2036,17 @@ class SerialTerminal(QMainWindow):
             except (RuntimeError, TypeError):
                 pass
             self.checkboxes[i].setVisible(False)
-            self.lineedits[i].setVisible(False)
-            self.sendline_btns[i].setVisible(False)
-            self.mode_labels[i].setVisible(False)
+            self.lineedits[i].setVisible(True)
+            self.sendline_btns[i].setVisible(True)
+            self.mode_labels[i].setVisible(True)
+            self.lineedits[i].setDisabled(False)
+            self.sendline_btns[i].setDisabled(False)
             self.lineedits[i].setText("")
             self.checkboxes[i].setChecked(False)
             self.update_lineedit_selection_style(i, False)
             
             self.hex_modes[i] = False
-            
-            ascii_icon_path = utils.get_resources("ascii_icon.png")
-            if os.path.exists(ascii_icon_path):
-                self.mode_labels[i].setPixmap(QIcon(ascii_icon_path).pixmap(20, 20))
-                self.mode_labels[i].setText("")
-            else:
-                self.mode_labels[i].setText("ASC")
-                self.mode_labels[i].setStyleSheet("font-size: 10px; font-weight: bold; color: #555; border: 1px solid #ccc; border-radius: 3px;")
-            
-            self.mode_labels[i].setToolTip("ASCII mode - Click to toggle HEX/ASCII")
-            self.mode_labels[i].setCursor(Qt.PointingHandCursor)
+            self.update_mode_label_style(i, False)
             
             def make_mode_toggle_handler_for_update(index):
                 def handler(event):
@@ -2038,32 +2072,34 @@ class SerialTerminal(QMainWindow):
             except (RuntimeError, TypeError):
                 pass
 
-            self.checkboxes[ui_index].setVisible(False)
-            self.lineedits[ui_index].setVisible(True)
-            self.sendline_btns[ui_index].setVisible(True)
-            self.mode_labels[ui_index].setVisible(True)
-            
-            raw_text = item["title"]["text"]
-            is_checked = bool(item.get("checked", False)) and bool(raw_text and raw_text.strip())
+            title_obj = item.get("title", {})
+            if isinstance(title_obj, dict):
+                raw_text = title_obj.get("text", "")
+                disabled = bool(title_obj.get("disabled", False))
+            else:
+                raw_text = str(title_obj) if title_obj else ""
+                disabled = False
+
+            text_strip = raw_text.strip()
+
+            is_checked = bool(item.get("checked", False)) and bool(text_strip)
             self.checkboxes[ui_index].setChecked(is_checked)
             self.update_lineedit_selection_style(ui_index, is_checked)
             
             # Format text based on hexmode
             hexmode_enabled = item.get("hexmode", False)
-            keep_hex_mode = self.settings.get("keep_hex_mode", False) if hasattr(self, 'settings') else False
+            keep_hex_mode = self.settings.get("keep_hex_mode", False) if hasattr(self, 'settings') and isinstance(self.settings, dict) else False
+            self.hex_modes[ui_index] = hexmode_enabled
+            self.update_mode_label_style(ui_index, hexmode_enabled)
             
-            if hexmode_enabled:
-                formatted_text = raw_text
-                self.lineedits[ui_index].setText(formatted_text)
-            else:
-                self.lineedits[ui_index].setText(raw_text)
+            self.lineedits[ui_index].setText(raw_text)
             
-            disabled = item.get("title", {}).get("disabled", False)
             self.checkboxes[ui_index].setDisabled(disabled)
             self.lineedits[ui_index].setDisabled(disabled)
             self.sendline_btns[ui_index].setDisabled(disabled)
             
             self.checkboxes[ui_index].setVisible(False)
+            self.lineedits[ui_index].setVisible(True)
             self.sendline_btns[ui_index].setVisible(not disabled)
             self.mode_labels[ui_index].setVisible(not disabled)
             
@@ -2109,12 +2145,12 @@ class SerialTerminal(QMainWindow):
 
         QApplication.instance().setStyleSheet(style)
         if hasattr(self, "command_rows_layout"):
-            self.command_rows_layout.setSpacing(1)
+            self.command_rows_layout.setSpacing(3)
+        terminal_bg = "#1f2933" if theme_name == "light_blue" else "#080d15"
         if hasattr(self, "terminal_widget"):
-            if theme_name == "light_blue":
-                self.terminal_widget.set_bg_color("#1f2933")
-            else:
-                self.terminal_widget.set_bg_color("#080d15")
+            self.terminal_widget.set_bg_color(terminal_bg)
+        if hasattr(self, "sequence_chart_window") and self.sequence_chart_window:
+            self.sequence_chart_window.set_bg_color(terminal_bg)
         self.update_collapse_divider_visibility(theme_name)
         self.update_theme_icons(theme_name)
 
@@ -2748,15 +2784,7 @@ class SerialTerminal(QMainWindow):
             self.hex_modes[index] = True
             self.lineedits[index].setPlaceholderText("XX XX XX ... (HEX values, 0x prefix supported)")
 
-            hex_icon_path = utils.get_resources("hex_icon.png")
-            if os.path.exists(hex_icon_path):
-                self.mode_labels[index].setPixmap(QIcon(hex_icon_path).pixmap(20, 20))
-                self.mode_labels[index].setText("")
-            else:
-                self.mode_labels[index].setText("HEX")
-                self.mode_labels[index].setStyleSheet("font-size: 10px; font-weight: bold; color: #e74c3c; border: 1px solid #e74c3c; border-radius: 3px;")
-
-            self.mode_labels[index].setToolTip("HEX mode - Click to toggle HEX/ASCII")
+            self.update_mode_label_style(index, True)
 
             # Allow hex digits, spaces, and 0x/0X prefixes for flexible input
             hex_regex = QRegularExpression(r"^[0-9A-Fa-fxX\s]*$")
@@ -2791,16 +2819,7 @@ class SerialTerminal(QMainWindow):
             self.lineedits[index].blockSignals(False)
             
             self.hex_modes[index] = False
-            
-            ascii_icon_path = utils.get_resources("ascii_icon.png")
-            if os.path.exists(ascii_icon_path):
-                self.mode_labels[index].setPixmap(QIcon(ascii_icon_path).pixmap(20, 20))
-                self.mode_labels[index].setText("")
-            else:
-                self.mode_labels[index].setText("ASC")
-                self.mode_labels[index].setStyleSheet("font-size: 10px; font-weight: bold; color: #555; border: 1px solid #ccc; border-radius: 3px;")
-            
-            self.mode_labels[index].setToolTip("ASCII mode - Click to toggle HEX/ASCII")
+            self.update_mode_label_style(index, False)
             
             self.lineedits[index].setPlaceholderText("")
             self.lineedits[index].setValidator(None)
@@ -2979,6 +2998,10 @@ class SerialTerminal(QMainWindow):
     def show_sequence_chart(self):
         if self.sequence_chart_window is None:
             self.sequence_chart_window = SequenceChartWindow(self)
+
+        theme_name = self.settings.get("theme", "light_blue") if hasattr(self, 'settings') else "light_blue"
+        terminal_bg = "#1f2933" if theme_name == "light_blue" else "#080d15"
+        self.sequence_chart_window.set_bg_color(terminal_bg)
 
         if self.sequence_chart_window.isVisible():
             self.sequence_chart_window.hide()
