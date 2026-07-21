@@ -81,12 +81,19 @@ QGroupBox#commandGroupsGroup QPushButton {
 }
 
 QGroupBox#serialSettingsGroup QComboBox,
-QGroupBox#serialSettingsGroup QLineEdit {
-    min-height: 20px;
+QGroupBox#serialSettingsGroup QLineEdit,
+QGroupBox#serialSettingsInlineGroup QComboBox,
+QGroupBox#serialSettingsInlineGroup QLineEdit {
+    min-height: 28px;
+    max-height: 28px;
+    height: 28px;
 }
 
-QGroupBox#serialSettingsGroup QPushButton {
-    min-height: 22px;
+QGroupBox#serialSettingsGroup QPushButton,
+QGroupBox#serialSettingsInlineGroup QPushButton {
+    min-height: 28px;
+    max-height: 28px;
+    height: 28px;
 }
 
 QGroupBox#serialSettingsInlineGroup::title {
@@ -105,11 +112,25 @@ QComboBox {
     background-color: #ffffff;
     color: #172033;
     border: 1px solid #d7e0eb;
-    border-radius: 5px;
-    padding: 4px 8px 4px 10px;
-    min-height: 20px;
+    border-radius: 2px;
+    padding: 3px 8px 3px 10px;
+    min-height: 28px;
     selection-background-color: #bfdbfe;
     selection-color: #0f172a;
+}
+
+QLineEdit {
+    min-height: 28px;
+    max-height: 28px;
+    height: 28px;
+    padding: 0px 8px;
+}
+
+QLineEdit#commandLineEdit[selected="true"] {
+    background-color: #2563eb;
+    color: #ffffff;
+    border: 1px solid #1d4ed8;
+    font-weight: 700;
 }
 
 QLineEdit:hover,
@@ -136,19 +157,25 @@ QComboBox:focus {
     border: 1px solid #4a90e2;
 }
 
-QComboBox {
-    padding-right: 28px;
+QComboBox,
+QFontComboBox {
+    padding: 0px 28px 0px 10px;
+    min-height: 28px;
+    max-height: 28px;
+    height: 28px;
 }
 
-QComboBox::drop-down {
+QComboBox::drop-down,
+QFontComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 28px;
+    width: 24px;
     border-left: none;
     background-color: transparent;
 }
 
-QComboBox::down-arrow {
+QComboBox::down-arrow,
+QFontComboBox::down-arrow {
     image: url(resources/down_arrow.png);
     width: 12px;
     height: 12px;
@@ -180,7 +207,7 @@ QPushButton {
     background-color: #ffffff;
     color: #172033;
     border: 1px solid #d7e0eb;
-    border-radius: 5px;
+    border-radius: 2px;
     padding: 4px 10px;
     min-height: 18px;
     font-weight: 800;
@@ -205,22 +232,36 @@ QPushButton:disabled {
 }
 
 QPushButton#connectButton {
-    background-color: #4a90e2;
-    border-color: #4a90e2;
+    background-color: #2563eb;
+    border: 1px solid #2563eb;
     color: #ffffff;
-    padding: 3px 10px;
-    min-height: 18px;
+    padding: 0px 12px;
+    min-height: 28px;
+    max-height: 28px;
+    height: 28px;
+    border-radius: 2px;
+    font-weight: 800;
 }
 
-QPushButton#connectButton:hover {
-    background-color: #5a9ff0;
-    border-color: #5a9ff0;
+QPushButton#connectButton:checked {
+    background-color: #2563eb;
+    border: 1px solid #2563eb;
+    color: #ffffff;
 }
 
-QPushButton#connectButton:checked,
-QPushButton#connectButton:pressed {
-    background-color: #3f7cc5;
-    border-color: #3f7cc5;
+QPushButton#connectButton:hover,
+QPushButton#connectButton:checked:hover {
+    background-color: #3b82f6;
+    border: 1px solid #93c5fd;
+    color: #ffffff;
+}
+
+QPushButton#connectButton[failed="true"],
+QPushButton#connectButton[failed="true"]:hover,
+QPushButton#connectButton[failed="true"]:pressed {
+    background-color: #dc2626 !important;
+    border: 1px solid #dc2626 !important;
+    color: #ffffff !important;
 }
 
 QPushButton#toolbarIconButton {
@@ -229,7 +270,7 @@ QPushButton#toolbarIconButton {
     min-height: 28px;
     max-width: 28px;
     max-height: 28px;
-    border-radius: 5px;
+    border-radius: 2px;
 }
 
 QPushButton#collapseButton {

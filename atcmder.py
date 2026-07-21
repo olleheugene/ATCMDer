@@ -87,6 +87,9 @@ QFrame#collapseButtonDivider {
 
 
 def load_stylesheet(theme_name):
+    if theme_name == "default":
+        return ""
+
     theme_path = utils.get_resources(f"{theme_name}.css")
     try:
         with open(theme_path, "r", encoding="utf-8") as f:

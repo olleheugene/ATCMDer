@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu
+from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu, QFrame
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices, QPainterPath
 from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QRectF, Signal, QPoint, QEvent
 import re
@@ -17,6 +17,7 @@ class TerminalWidget(QAbstractScrollArea):
 
     def __init__(self, parent=None, font_family=None, font_size=utils.DEFAULT_TERMINAL_FONT_SIZE):
         super().__init__(parent)
+        self.setFrameShape(QFrame.NoFrame)
         
         # Set up monospace font with multiple fallbacks
         self.font = QFont()
@@ -89,6 +90,7 @@ class TerminalWidget(QAbstractScrollArea):
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Base, TERMINAL_BG)
         self.setPalette(palette)
+        self.bg_color = TERMINAL_BG
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Fast rendering with QTimer
@@ -148,6 +150,12 @@ class TerminalWidget(QAbstractScrollArea):
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
         self.viewport().installEventFilter(self)
+
+    def set_bg_color(self, color):
+        if isinstance(color, str):
+            color = QColor(color)
+        self.bg_color = color
+        self.viewport().update()
 
     def eventFilter(self, obj, event):
         if obj is self.viewport():
@@ -551,7 +559,7 @@ class TerminalWidget(QAbstractScrollArea):
         rounded_path = QPainterPath()
         rounded_path.addRoundedRect(rounded_rect, 12, 12)
         painter.setClipPath(rounded_path)
-        painter.fillPath(rounded_path, TERMINAL_BG)
+        painter.fillPath(rounded_path, getattr(self, "bg_color", TERMINAL_BG))
         
         if not self.lines:
             painter.end()

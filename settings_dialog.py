@@ -410,7 +410,7 @@ class WindowsTab(QWidget):
         theme_selection_layout.setSpacing(8)
         theme_label = QLabel("Theme:")
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["web_dark", "web", "default", "dark", "light"])
+        self.theme_combo.addItems(["web_dark", "web", "light_blue", "default", "dark", "light"])
         theme_selection_layout.addWidget(theme_label)
         theme_selection_layout.addWidget(self.theme_combo)
         theme_selection_layout.addStretch()
@@ -517,6 +517,8 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.resize(500, 400)
         self.setModal(True)  # Set as modal dialog
+        if parent and hasattr(parent, 'styleSheet') and parent.styleSheet():
+            self.setStyleSheet(parent.styleSheet())
         
         layout = QVBoxLayout()
         layout.setContentsMargins(14, 14, 14, 14)

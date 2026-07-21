@@ -1,0 +1,7 @@
+/* Default Theme Stylesheet - Uses Native OS Controls for QComboBox */
+QLineEdit#commandLineEdit[selected="true"] {
+    background-color: #007acc;
+    color: #ffffff;
+    border: 1px solid #005999;
+    font-weight: 700;
+}
