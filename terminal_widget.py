@@ -1002,6 +1002,9 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().update()
 
     def mousePressEvent(self, event):
+        self.setFocus()
+        self.ime_composing = False
+        self.preedit_text = ""
         if event.button() == Qt.LeftButton:
             line, col = self._pos_to_linecol(event.pos())
             self.selection_start = (line, col)
@@ -1013,6 +1016,12 @@ class TerminalWidget(QAbstractScrollArea):
             self.hovered_url = None
             self.viewport().setCursor(Qt.IBeamCursor)
             self.viewport().update()
+
+    def focusOutEvent(self, event):
+        self.ime_composing = False
+        self.preedit_text = ""
+        self.viewport().update()
+        super().focusOutEvent(event)
 
     def mouseMoveEvent(self, event):
         self._last_mouse_pos = event.pos()

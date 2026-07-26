@@ -797,20 +797,24 @@ class SerialTerminal(QMainWindow):
         text = event.text()
         modifiers = event.modifiers()
 
-        # Let the input method handle composition keys
-        if self.terminal_widget.ime_composing and not (modifiers & (Qt.ControlModifier | Qt.MetaModifier)):
-            return
-        if text and any(ord(c) > 127 for c in text):
+        has_ctrl_or_cmd = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier))
+        has_alt = bool(modifiers & Qt.KeyboardModifier.AltModifier)
+
+        # Clear IME state on explicit action keys
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Backspace, Qt.Key.Key_Tab, Qt.Key.Key_Escape, Qt.Key.Key_Up, Qt.Key.Key_Down):
+            self.terminal_widget.ime_composing = False
+            self.terminal_widget.preedit_text = ""
+
+        # Let the input method handle composition keys during active IME composition
+        if self.terminal_widget.ime_composing and not has_ctrl_or_cmd and not has_alt:
             return
 
-        if (modifiers & Qt.ControlModifier or modifiers & Qt.MetaModifier) and key == Qt.Key_F:
-            self.show_find_dialog()
-            return
-
-        # Font size adjustment
-        if modifiers == Qt.KeyboardModifier.ControlModifier:
-            # Ctrl + Plus
-            if key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
+        # Shortcuts: Ctrl / Cmd + key
+        if has_ctrl_or_cmd:
+            if key == Qt.Key.Key_F:
+                self.show_find_dialog()
+                return
+            elif key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
                 self.increase_font_size()
                 return
             elif key == Qt.Key.Key_Minus:
@@ -828,8 +832,9 @@ class SerialTerminal(QMainWindow):
             elif key == Qt.Key.Key_A:
                 self.terminal_widget.select_all()
                 return
-        elif modifiers == Qt.KeyboardModifier.AltModifier:
-            # Alt + 1
+
+        # Shortcuts: Alt + key
+        elif has_alt:
             if key == Qt.Key.Key_1:
                 self.send_lineedit_command(1)
                 return
@@ -861,33 +866,26 @@ class SerialTerminal(QMainWindow):
                 self.send_lineedit_command(0)
                 return
         else:
-            if key == Qt.Key_F1:
+            if key == Qt.Key.Key_F1:
                 self.show_shortcut_list()
                 return
-            elif key == Qt.Key_F2:
-                # Connect if not already connected
+            elif key == Qt.Key.Key_F2:
                 if not (self.serial and self.serial.is_open):
                     self.toggle_serial_connection()
                 return
-            elif key == Qt.Key_F3:
-                # Disconnect if connected
+            elif key == Qt.Key.Key_F3:
                 if self.serial and self.serial.is_open:
                     self.toggle_serial_connection()
                 return
-            elif key == Qt.Key_F4:
+            elif key == Qt.Key.Key_F4:
                 self.serial_port_combo.showPopup()
                 return
-            elif key == Qt.Key_F5:
+            elif key == Qt.Key.Key_F5:
                 self.refresh_serial_ports(False)
                 return
-            elif key == Qt.Key_F6:
+            elif key == Qt.Key.Key_F6:
                 self.toggle_left_panel()
                 return
-            elif key == Qt.Key_F:
-                # Ctrl+F or Cmd+F to show find dialog
-                if (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)):
-                    self.show_find_dialog()
-                    return
 
         if not (self.serial and self.serial.is_open):
             return
@@ -900,11 +898,6 @@ class SerialTerminal(QMainWindow):
         # Arrow Down - Command history (next command)
         elif key == Qt.Key.Key_Down:
             self.handle_history_down()
-            return
-        
-        # Printable character input
-        elif text and text.isprintable() and not (modifiers & Qt.KeyboardModifier.ControlModifier):
-            self.handle_character_input(text)
             return
         
         # Enter key
@@ -920,6 +913,11 @@ class SerialTerminal(QMainWindow):
         # Tab key (for autocomplete, etc.)
         elif key == Qt.Key.Key_Tab:
             self.handle_tab()
+            return
+
+        # Printable character input
+        elif text and text.isprintable() and not has_ctrl_or_cmd:
+            self.handle_character_input(text)
             return
 
     def baudrate_number_length(self):
