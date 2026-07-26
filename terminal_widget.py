@@ -1023,6 +1023,9 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().update()
         super().focusOutEvent(event)
 
+    def focusNextPrevChild(self, next):
+        return False
+
     def mouseMoveEvent(self, event):
         self._last_mouse_pos = event.pos()
         if self.is_selecting:
@@ -1418,6 +1421,16 @@ class TerminalWidget(QAbstractScrollArea):
             self.toggle_serial_connection()
             self.toggle_serial_connection()
 
+    def event(self, event):
+        if event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            self.keyPressEvent(event)
+            return True
+        return super().event(event)
+
     def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            event.accept()
+            self.key_pressed.emit(event)
+            return
         super().keyPressEvent(event)
         self.key_pressed.emit(event)

@@ -911,7 +911,8 @@ class SerialTerminal(QMainWindow):
             return
         
         # Tab key (for autocomplete, etc.)
-        elif key == Qt.Key.Key_Tab:
+        elif key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            event.accept()
             self.handle_tab()
             return
 
