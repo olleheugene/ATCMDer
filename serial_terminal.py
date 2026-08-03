@@ -520,6 +520,14 @@ class SerialTerminal(QMainWindow):
         self.chart_btn.setToolTip("Open Sequence Chart")
         self.chart_btn.clicked.connect(self.show_sequence_chart)
         
+        self.scroll_bottom_btn = QPushButton()
+        self.scroll_bottom_btn.setObjectName("toolbarIconButton")
+        self.scroll_bottom_btn.setIcon(QIcon(utils.get_resources(utils.DOWN_ARROW_ICON_NAME)))
+        self.scroll_bottom_btn.setFixedSize(28, 28)
+        self.scroll_bottom_btn.setIconSize(QSize(20, 20))
+        self.scroll_bottom_btn.setToolTip("Scroll to bottom & move cursor to end")
+        self.scroll_bottom_btn.clicked.connect(self.scroll_terminal_to_bottom)
+
         self.ext_cmd_btn = QPushButton()
         self.ext_cmd_btn.setObjectName("toolbarIconButton")
         self.ext_cmd_btn.setIcon(QIcon(utils.get_resources(utils.EXTERNAL_CMD_ICON_NAME)))
@@ -535,6 +543,7 @@ class SerialTerminal(QMainWindow):
         self.terminal_action_layout = QHBoxLayout(self.terminal_action_widget)
         self.terminal_action_layout.setContentsMargins(0, 0, 0, 0)
         self.terminal_action_layout.setSpacing(6)
+        self.terminal_action_layout.addWidget(self.scroll_bottom_btn)
         self.terminal_action_layout.addWidget(self.ext_cmd_btn)
         self.terminal_action_layout.addWidget(self.chart_btn)
         self.terminal_action_layout.addWidget(self.clear_btn)
@@ -1405,6 +1414,12 @@ class SerialTerminal(QMainWindow):
                 self.show_current_input()
             self.waiting_for_autocomplete = False
 
+    def scroll_terminal_to_bottom(self):
+        """Scroll terminal to bottom, place cursor at end, and enable auto scroll."""
+        if hasattr(self, "terminal_widget") and self.terminal_widget:
+            self.terminal_widget.scroll_to_bottom()
+            self.terminal_widget.setFocus()
+
     def clear_terminal(self):
         """Clear terminal"""
         self.terminal_widget.clear()
@@ -2138,7 +2153,7 @@ class SerialTerminal(QMainWindow):
         style += "\n" + COMMON_THEME_QSS
         style += "\n" + WEB_DIVIDER_QSS
 
-        for resource_name in ("down_arrow.png", "spin_up_light.svg", "spin_down_light.svg", "checkbox.png", "collapse-divider.svg", "checkmark.svg"):
+        for resource_name in ("down_double_arro.png","down_arrow.png", "spin_up_light.svg", "spin_down_light.svg", "checkbox.png", "collapse-divider.svg", "checkmark.svg"):
             resource_path = utils.get_resources(resource_name).replace("\\", "/")
             style = style.replace(f"url(resources/{resource_name})", f"url({resource_path})")
 

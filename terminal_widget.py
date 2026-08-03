@@ -389,6 +389,14 @@ class TerminalWidget(QAbstractScrollArea):
             self.cursor_col = 0
         self.viewport().update()
 
+    def scroll_to_bottom(self):
+        """Scroll to bottom, enable auto scroll, set cursor to end, and update view"""
+        self.auto_scroll = True
+        self.scroll_offset = 0
+        self.set_cursor_to_end()
+        self.update_scrollbar()
+        self.viewport().update()
+
     def append_text(self, text, timestamp=None):
         """Add text to terminal with optional timestamp"""
         if not text:
